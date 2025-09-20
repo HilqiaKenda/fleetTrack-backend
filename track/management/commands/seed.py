@@ -23,27 +23,21 @@ class Command(BaseCommand):
             )
         )
 
-        # Locations
         self.stdout.write(self.style.SUCCESS("Generating Locations..."))
         locations = self.create_locations(num_records * 5)
 
-        # Drivers
         self.stdout.write(self.style.SUCCESS("Generating Drivers..."))
         drivers = self.create_drivers(num_records)
 
-        # Carriers
         self.stdout.write(self.style.SUCCESS("Generating Carriers..."))
         carriers = self.create_carriers(num_records // 2 or 1)
 
-        # Vehicles
         self.stdout.write(self.style.SUCCESS("Generating Vehicles..."))
         vehicles = self.create_vehicles(carriers, num_records)
 
-        # Trips
         self.stdout.write(self.style.SUCCESS("Generating Trips..."))
         trips = self.create_trips(drivers, vehicles, num_records)
 
-        # Trip Events
         self.stdout.write(self.style.SUCCESS("Generating Trip Events..."))
         self.create_trip_events(trips, locations)
 
@@ -179,7 +173,6 @@ class Command(BaseCommand):
                 )
                 events.append(event)
 
-                # Advance timestamp
                 timestamp += timezone.timedelta(hours=max(duration, 1))
 
         TripEvent.objects.bulk_create(events)

@@ -16,7 +16,6 @@ class Location(models.Model):
         help_text="Longitude coordinate",
     )
 
-    # Additional location metadata
     city = models.CharField(max_length=100, blank=True)
     state = models.CharField(max_length=50, blank=True)
     country = models.CharField(max_length=50, default="USA")
@@ -103,7 +102,6 @@ class Trip(models.Model):
     )
     vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE, related_name="trips")
 
-    # Trip details
     shipper_and_commodity = models.CharField(max_length=255, blank=True)
     cycle_rule = models.CharField(
         max_length=20, choices=CYCLE_RULE_CHOICES, default="70hr/8day"
@@ -149,7 +147,6 @@ class Trip(models.Model):
         """Recalculate all totals based on trip events"""
         from django.db.models import Sum, Q
 
-        # Calculate hours from duration-based events
         hours_data = self.events.aggregate(
             driving_hours=Sum("duration", filter=Q(event_type="driving")),
             on_duty_hours=Sum("duration", filter=Q(event_type="on_duty")),
@@ -162,7 +159,6 @@ class Trip(models.Model):
         self.total_off_duty_hours = hours_data["off_duty_hours"] or 0.0
         self.total_sleeper_hours = hours_data["sleeper_hours"] or 0.0
 
-        # Calculate total miles from driving events
         miles_data = self.events.filter(event_type="driving").aggregate(
             total_miles=Sum("miles_driven")
         )
@@ -198,27 +194,23 @@ class TripEvent(models.Model):
         ("other", "Other"),
     ]
 
-    # Relationships
     trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name="events")
     location = models.ForeignKey(
         Location, on_delete=models.CASCADE, related_name="trip_events"
     )
 
-    # Event details
     event_type = models.CharField(max_length=20, choices=EVENT_TYPE_CHOICES)
     timestamp = models.DateTimeField()
     duration = models.FloatField(
         default=0.0, help_text="Duration in hours", validators=[MinValueValidator(0)]
     )
 
-    # Driving-specific fields
     miles_driven = models.FloatField(
         default=0.0,
         validators=[MinValueValidator(0)],
         help_text="Miles driven during this event",
     )
 
-    # Additional information
     notes = models.TextField(blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -234,7 +226,6 @@ class TripEvent(models.Model):
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
-        # Recalculate trip totals when event is saved
         self.trip.calculate_totals()
 
     def __str__(self):
