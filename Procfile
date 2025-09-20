@@ -1,1 +1,1 @@
-web: gunicorn fleetTrack-backend.wsgi
+web: gunicorn track.wsgi
