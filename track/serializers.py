@@ -123,14 +123,12 @@ class TripEventCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         location_data = validated_data.pop("location_data")
 
-        # Create or get location
         location_serializer = LocationSerializer(data=location_data)
         if location_serializer.is_valid():
             location = location_serializer.save()
         else:
             raise serializers.ValidationError(location_serializer.errors)
 
-        # Create trip event
         trip_event = TripEvent.objects.create(location=location, **validated_data)
         return trip_event
 
@@ -330,10 +328,8 @@ class TripCreateSerializer(serializers.ModelSerializer):
             )
             validated_data["vehicle"] = vehicle
 
-        # Create trip
         trip = Trip.objects.create(**validated_data)
 
-        # Create initial events
         all_events = initial_events_data + legacy_locations
         for event_data in all_events:
             event_serializer = TripEventCreateSerializer(data=event_data)
