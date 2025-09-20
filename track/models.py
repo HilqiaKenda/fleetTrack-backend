@@ -6,7 +6,7 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 class Location(models.Model):
     """Normalized location model - one record per unique location"""
 
-    address = models.CharField(max_length=255, unique=True)
+    address = models.CharField(max_length=255)
     latitude = models.FloatField(
         validators=[MinValueValidator(-90), MaxValueValidator(90)],
         help_text="Latitude coordinate",
