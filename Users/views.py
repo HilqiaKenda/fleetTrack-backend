@@ -9,6 +9,8 @@ from .serializers import RegisterSerializer, UserSerializer, LoginSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
+from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
 
 # Register
 class RegisterView(APIView):
@@ -41,7 +43,7 @@ class LoginView(TokenObtainPairView):
             return response
         # get user and return user data alongside tokens
         username = request.data.get("username")
-        user = None
+       
         if username:
             try:
                 user = User.objects.get(username=username)
@@ -49,12 +51,11 @@ class LoginView(TokenObtainPairView):
                 user = None
         data = response.data
         if user:
-            data["user"] = UserSerializer(user).data
+            data['user'] = UserSerializer(user).data
         return Response(data, status=response.status_code)
 
 # Refresh used directly from simplejwt
-from rest_framework_simplejwt.exceptions import TokenError
-from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
+
 
 class RefreshTokenView(TokenRefreshView):
     serializer_class = TokenRefreshSerializer
@@ -67,7 +68,7 @@ class RefreshTokenView(TokenRefreshView):
             token = RefreshToken(refresh_token)
             # check if blacklisted
             if BlacklistedToken.objects.filter(token__jti=token.get("jti")).exists():
-                return Response({"detail": "Token has been blacklisted."}, status=status.HTTP_401_UNAUTHORIZED)
+                return Response({"detail": "Unauthorized access."}, status=status.HTTP_401_UNAUTHORIZED)
         except TokenError:
             return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
         return super().post(request, *args, **kwargs)
