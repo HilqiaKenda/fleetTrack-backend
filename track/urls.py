@@ -5,9 +5,11 @@ from .views import (
     LocationViewSet,
     DriverViewSet,
     CarrierViewSet,
+    SearchViewSet,
     VehicleViewSet,
     TripViewSet,
     TripEventViewSet,
+    # general_search,
 )
 
 router = DefaultRouter()
@@ -18,6 +20,7 @@ router.register(r"carriers", CarrierViewSet, basename="carrier")
 router.register(r"vehicles", VehicleViewSet, basename="vehicle")
 router.register(r"trips", TripViewSet, basename="trips")
 router.register(r"trip-events", TripEventViewSet, basename="event")
+router.register(r"", SearchViewSet, basename="search")
 
 urlpatterns = [
     path("", include(router.urls)),
