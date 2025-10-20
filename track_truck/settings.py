@@ -25,18 +25,6 @@ SECRET_KEY = "django-insecure-wexrpb#uwe$-^^$vdoppqn*wr*1^2g5mcr-!on*+ynf!&%#wk8
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-# ALLOWED_HOSTS = ["localhost", "127.0.0.1", "fleetTrack-backend.onrender.com"]
-ALLOWED_HOSTS = ["*"]
-
-
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
-    "https://fleet-track-frontend.vercel.app",
-]
-
 
 # Application definition
 
@@ -64,6 +52,22 @@ MIDDLEWARE = [
 ]
 
 CORS_ALLOW_ALL_ORIGINS = True
+
+
+ALLOWED_HOSTS = [
+    "localhost:3000",
+    "http://127.0.0.1:8000",
+    "https://fleet-track-km.vercel.app/",
+    "https://fleet-track-frontend.vercel.app",
+]
+
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+    "https://fleet-track-km.vercel.app/",
+    "https://fleet-track-frontend.vercel.app",
+]
 
 
 ROOT_URLCONF = "track_truck.urls"
