@@ -54,13 +54,14 @@ MIDDLEWARE = [
 CORS_ALLOW_ALL_ORIGINS = True
 
 
-ALLOWED_HOSTS = [
-    "localhost:3000",
-    "http://127.0.0.1:8000",
-    "https://fleet-track-km.vercel.app",
-    "https://fleet-track-frontend.vercel.app",
-    "https://fleettrack-backend-1.onrender.com",
-]
+ALLOWED_HOSTS = ["*"]
+# ALLOWED_HOSTS = [
+#     "localhost:3000",
+#     "http://127.0.0.1:8000",
+#     "https://fleet-track-km.vercel.app",
+#     "https://fleet-track-frontend.vercel.app",
+#     "https://fleettrack-backend-1.onrender.com",
+# ]
 
 
 CORS_ALLOWED_ORIGINS = [
