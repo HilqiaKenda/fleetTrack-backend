@@ -3,6 +3,21 @@ from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 
 
+# models.py additions
+
+
+class UserActivityLog(models.Model):
+    """Track user actions for audit"""
+
+    # user = models.ForeignKey("auth.User", on_delete=models.CASCADE)
+    action = models.CharField(max_length=100)
+    resource_type = models.CharField(max_length=50)
+    resource_id = models.IntegerField(null=True)
+    ip_address = models.GenericIPAddressField()
+    device_info = models.CharField(max_length=255)
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+
 class Location(models.Model):
     """Normalized location model - one record per unique location"""
 
@@ -75,6 +90,7 @@ class Vehicle(models.Model):
     year = models.PositiveIntegerField(blank=True, null=True)
     vin = models.CharField(max_length=17, unique=True, blank=True)
     license_plate = models.CharField(max_length=20, blank=True)
+    is_active = models.BooleanField(default=True)
     carrier = models.ForeignKey(
         Carrier, on_delete=models.CASCADE, related_name="vehicles"
     )
@@ -230,3 +246,47 @@ class TripEvent(models.Model):
 
     def __str__(self):
         return f"{self.trip.id} - {self.get_event_type_display()} at {self.location.address}"
+
+
+class DashboardCache(models.Model):
+    """Cache frequently accessed dashboard data"""
+
+    cache_key = models.CharField(max_length=255, unique=True)
+    cache_data = models.JSONField()
+    user_role = models.CharField(max_length=50)
+    expires_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["cache_key", "user_role"]),
+            models.Index(fields=["expires_at"]),
+        ]
+
+
+class AlertLog(models.Model):
+    """Track all system alerts"""
+
+    SEVERITY_CHOICES = [
+        ("critical", "Critical"),
+        ("high", "High"),
+        ("medium", "Medium"),
+        ("low", "Low"),
+    ]
+
+    vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE)
+    alert_type = models.CharField(max_length=50)
+    severity = models.CharField(max_length=20, choices=SEVERITY_CHOICES)
+    message = models.TextField()
+    location_lat = models.FloatField(null=True)
+    location_lng = models.FloatField(null=True)
+    location_address = models.CharField(max_length=255, blank=True)
+    is_resolved = models.BooleanField(default=False)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    # resolved_by = models.ForeignKey(
+    #     "auth.User",
+    #     on_delete=models.SET_NULL,
+    #     null=True,
+    #     related_name="resolved_alerts",
+    # )
+    created_at = models.DateTimeField(auto_now_add=True)
