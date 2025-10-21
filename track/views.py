@@ -9,6 +9,7 @@ from rest_framework.viewsets import GenericViewSet
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.decorators import action
+from django.views.decorators.csrf import csrf_exempt
 from django.db.models.functions import Coalesce
 from django.core.cache import cache
 from django.db.models import Sum, Avg, Count, Q, Value
@@ -35,6 +36,8 @@ from .serializers import (
     TripEventSerializer,
     TripEventCreateSerializer,
 )
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.views import TokenRefreshView
 import re
 import math
 import logging
@@ -42,6 +45,38 @@ import traceback
 
 
 logger = logging.getLogger(__name__)
+
+
+class CookeRefreshToken(TokenRefreshView):
+    def post(self, request) -> Response:
+        refresh_token = request.COOKIES.get("refresh_token")
+
+        if not refresh_token:
+            return Response(
+                {"error": "Refresh token not provided"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        try:
+            refresh = RefreshToken(refresh_token)
+            access_token = str(refresh_token)
+            response = Response(
+                {"message": "Access token refresh successfully"},
+                status=status.HTTP_200_OK,
+            )
+
+            response.set_cookie(
+                key="access_token",
+                value=access_token,
+                httponly=True,
+                secure=True,
+                samesite="Strict",
+            )
+            return response
+        except:
+            return response(
+                {"error": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED
+            )
 
 
 class AdminDashboardViewSet(GenericViewSet):
@@ -311,6 +346,76 @@ class AdminDashboardViewSet(GenericViewSet):
         return ip
 
 
+class DriverDashboardViewSet(GenericViewSet):
+
+    # permission_classes = [IsAuthenticated]
+
+    @action(detail=False, methods=["get"], url_path="summary")
+    def driver_summary(self, request):
+        # driver_id = request.query_params.get("driver_id")
+        driver_id = 1
+        if not driver_id:
+            return Response(
+                {"status": False, "message": "Driver ID is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            driver = Driver.objects.get(id=driver_id)
+        except Driver.DoesNotExist:
+            return Response(
+                {"status": False, "message": "Driver not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Get all trips by this driver
+        all_trips = Trip.objects.filter(driver_id=driver.id)
+        trips_count = Trip.objects.filter(driver_id=driver.id).count()
+
+        # Get all vehicles used
+        vehicle_ids = all_trips.values_list("vehicle_id", flat=True).distinct()
+        used_vehicles = Vehicle.objects.filter(id__in=vehicle_ids)
+        all_vehicles = Vehicle.objects.filter(id__in=vehicle_ids).count()
+
+        # Get current assigned trip
+        current_trip = all_trips.filter(
+            Q(status="ongoing") | Q(status="assigned")
+        ).first()
+
+        # Get current assigned vehicle
+        current_vehicle = current_trip.vehicle if current_trip else None
+
+        # Driver details (basic record)
+        driver_record = {
+            "id": driver.id,
+            # "name": driver.name,
+            "email": driver.email,
+            "phone": driver.phone_number,
+        }
+
+        # Serialize trip and vehicle data as needed or use DRF serializers if available
+        trip_data = list(all_trips.values())
+        vehicle_data = list(used_vehicles.values())
+        current_trip_data = current_trip.id if current_trip else None
+        current_vehicle_data = current_vehicle.id if current_vehicle else None
+
+        return Response(
+            {
+                "status": True,
+                "data": {
+                    "driver": driver_record,
+                    "current_vehicle_id": current_vehicle_data,
+                    "current_trip_id": current_trip_data,
+                    "used_vehicles": all_vehicles,
+                    "trips_count": trips_count,
+                    "all_trips": trip_data,
+                    # "used_vehicles": vehicle_data,
+                },
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 class LocationViewSet(
     CreateModelMixin,
     ListModelMixin,
@@ -391,6 +496,7 @@ class VehicleViewSet(
     UpdateModelMixin,
     GenericViewSet,
 ):
+    permission_classes = [IsAdminUser, IsAuthenticated]
     queryset = Vehicle.objects.select_related("carrier")
     serializer_class = VehicleSerializer
 
@@ -411,6 +517,7 @@ class TripViewSet(
     GenericViewSet,
 ):
 
+    permission_classes = [IsAuthenticated]
     queryset = Trip.objects.select_related(
         "driver", "co_driver", "vehicle__carrier"
     ).prefetch_related("events__location")
@@ -546,6 +653,7 @@ class TripEventViewSet(
     UpdateModelMixin,
     GenericViewSet,
 ):
+    permission_classes = [IsAuthenticated]
     queryset = TripEvent.objects.select_related("trip", "location")
 
     def get_serializer_class(self):

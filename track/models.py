@@ -105,6 +105,12 @@ class Trip(models.Model):
     """Main trip record"""
 
     CYCLE_RULE_CHOICES = [("70hr/8day", "70hr/8day"), ("60hr/7day", "60hr/7day")]
+    STATUS_CHOICES = [
+        ("active", "active"),
+        ("assigned", "assigned"),
+        ("ongoing", "ongoing"),
+        ("completed", "completed"),
+    ]
 
     date = models.DateField()
 
@@ -134,6 +140,7 @@ class Trip(models.Model):
     # Additional information
     remarks = models.TextField(blank=True)
     is_completed = models.BooleanField(default=False)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="active")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
