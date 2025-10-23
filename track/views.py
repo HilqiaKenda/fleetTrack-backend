@@ -82,7 +82,7 @@ class CookeRefreshToken(TokenRefreshView):
 class AdminDashboardViewSet(GenericViewSet):
     # permission_classes = [IsAuthenticated, IsAdminUser]
 
-    @action(detail=False, methods=["get"])
+    @action(detail=False, methods=["get", "post", "put"])
     def summary(self, request):
         """Get comprehensive admin dashboard data"""
         try:
