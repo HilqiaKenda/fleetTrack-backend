@@ -18,7 +18,7 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument(
-            "--num", type=int, default=10, help="Number of trips to generate"
+            "--num", type=int, default=100, help="Number of trips to generate"
         )
 
     def handle(self, *args, **kwargs):

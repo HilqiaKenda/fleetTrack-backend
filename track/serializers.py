@@ -4,6 +4,10 @@ from .models import Location, Driver, Carrier, Vehicle, Trip, TripEvent
 from time import timezone
 
 
+class EmptySerializer(serializers.Serializer):
+    pass
+
+
 class LocationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Location

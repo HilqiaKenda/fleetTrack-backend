@@ -29,6 +29,7 @@ from .models import (
     TripEvent,
 )
 from .serializers import (
+    EmptySerializer,
     LocationSerializer,
     # DriverSerializer,
     # CarrierSerializer,
@@ -83,6 +84,9 @@ class CookeRefreshToken(TokenRefreshView):
 
 class AdminDashboardViewSet(GenericViewSet):
     # permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def get_serializer_class(self):
+        return EmptySerializer
 
     @action(detail=False, methods=["get", "post", "put"])
     def summary(self, request):
@@ -355,8 +359,8 @@ class DriverDashboardViewSet(GenericViewSet):
 
     @action(detail=False, methods=["get"], url_path="summary")
     def driver_summary(self, request):
-        # driver_id = request.query_params.get("driver_id")
-        driver_id = 1
+        driver_id = request.query_params.get("driver_id")
+        # driver_id = 1
         if not driver_id:
             return Response(
                 {"status": False, "message": "Driver ID is required"},
