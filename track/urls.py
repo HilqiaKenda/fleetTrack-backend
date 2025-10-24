@@ -10,7 +10,6 @@ from .views import (
     VehicleViewSet,
     TripViewSet,
     TripEventViewSet,
-    # general_search,
 )
 
 router = DefaultRouter()

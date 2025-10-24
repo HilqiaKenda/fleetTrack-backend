@@ -6,7 +6,7 @@ import random
 from datetime import timedelta
 from django.utils import timezone
 
-from backend.track.models import Carrier, Vehicle
+from track.models import Carrier, Vehicle
 
 
 class Command(BaseCommand):

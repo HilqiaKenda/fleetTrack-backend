@@ -16,6 +16,8 @@ from django.db.models import Sum, Avg, Count, Q, Value
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from django.utils import timezone
 from datetime import datetime, timedelta
+
+from user.serializers import CarrierSerializer, DriverSerializer
 from .models import (
     AlertLog,
     Location,
@@ -28,8 +30,8 @@ from .models import (
 )
 from .serializers import (
     LocationSerializer,
-    DriverSerializer,
-    CarrierSerializer,
+    # DriverSerializer,
+    # CarrierSerializer,
     VehicleSerializer,
     TripSerializer,
     TripCreateSerializer,
@@ -186,7 +188,8 @@ class AdminDashboardViewSet(GenericViewSet):
             return Response(
                 {
                     "status": False,
-                    "error": {"message": "error", "details": str(e)},
+                    "message": "error",
+                    "details": str(e),
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
