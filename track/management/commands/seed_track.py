@@ -1,5 +1,3 @@
-# management/commands/seed_track_data.py
-
 from django.core.management.base import BaseCommand
 from faker import Faker
 from random import randint, uniform, choice

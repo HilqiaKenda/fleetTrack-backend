@@ -93,6 +93,10 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         return token
 
 
+class EmptySerializer(serializers.Serializer):
+    pass
+
+
 class UserProfileSerializer(serializers.ModelSerializer):
     """Detailed user profile serializer"""
 

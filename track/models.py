@@ -2,6 +2,8 @@ from django.utils import timezone
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 
+from user.models import Carrier, Driver
+
 
 # models.py additions
 
@@ -48,37 +50,6 @@ class Location(models.Model):
 
     def __str__(self):
         return self.address
-
-
-class Driver(models.Model):
-    """Driver information"""
-
-    driver_initial = models.CharField(max_length=10, unique=True)
-    full_name = models.CharField(max_length=255)
-    license_number = models.CharField(max_length=50, unique=True)
-    phone_number = models.CharField(max_length=20, blank=True)
-    email = models.EmailField(blank=True)
-
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return f"{self.driver_initial} - {self.full_name}"
-
-
-class Carrier(models.Model):
-    """Carrier/Company information"""
-
-    name = models.CharField(max_length=255, unique=True)
-    dot_number = models.CharField(max_length=20, unique=True, blank=True)
-    mc_number = models.CharField(max_length=20, blank=True)
-    address = models.TextField(blank=True)
-    phone = models.CharField(max_length=20, blank=True)
-
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return self.name
 
 
 class Vehicle(models.Model):
@@ -290,10 +261,10 @@ class AlertLog(models.Model):
     location_address = models.CharField(max_length=255, blank=True)
     is_resolved = models.BooleanField(default=False)
     resolved_at = models.DateTimeField(null=True, blank=True)
-    # resolved_by = models.ForeignKey(
-    #     "auth.User",
-    #     on_delete=models.SET_NULL,
-    #     null=True,
-    #     related_name="resolved_alerts",
-    # )
+    resolved_by = models.ForeignKey(
+        "user.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="resolved_alerts",
+    )
     created_at = models.DateTimeField(auto_now_add=True)

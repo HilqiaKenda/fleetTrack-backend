@@ -1,11 +1,9 @@
 from rest_framework import serializers
 from django.db import transaction
-from .models import Location, Driver, Carrier, Vehicle, Trip, TripEvent
+
+from user.models import Carrier, Driver
+from .models import Location, Vehicle, Trip, TripEvent
 from time import timezone
-
-
-class EmptySerializer(serializers.Serializer):
-    pass
 
 
 class LocationSerializer(serializers.ModelSerializer):
@@ -31,41 +29,6 @@ class LocationSerializer(serializers.ModelSerializer):
             address=address, defaults=validated_data
         )
         return location
-
-
-class DriverSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Driver
-        fields = [
-            "id",
-            "driver_initial",
-            "full_name",
-            "license_number",
-            "phone_number",
-            "email",
-            "created_at",
-            "updated_at",
-        ]
-
-
-class CarrierSerializer(serializers.ModelSerializer):
-    vehicles_count = serializers.SerializerMethodField()
-
-    class Meta:
-        model = Carrier
-        fields = [
-            "id",
-            "name",
-            "dot_number",
-            "mc_number",
-            "address",
-            "phone",
-            "vehicles_count",
-            "created_at",
-        ]
-
-    def get_vehicles_count(self, obj):
-        return obj.vehicles.count()
 
 
 class VehicleSerializer(serializers.ModelSerializer):
@@ -256,7 +219,6 @@ class TripCreateSerializer(serializers.ModelSerializer):
             "total_mileage_today",
             "remarks",
             "initial_events",
-            # Legacy fields
             "current_location",
             "pickup_location",
             "dropoff_location",

@@ -5,32 +5,54 @@ from django.contrib.auth.models import (
     AbstractBaseUser,
     BaseUserManager,
     PermissionsMixin,
+    AbstractUser,
 )
+
+from django.utils.translation import gettext_lazy as _
 
 
 class UserManager(BaseUserManager):
-    def create_user(
-        self, email, username, role="Maintenancer", password=None, **extra_fields
-    ):
+    """Custom manager for the User model."""
+
+    def create_user(self, email, username, role, password=None, **extra_fields):
+        """Create and return a regular user."""
         if not email:
-            raise ValueError("Users must have an email address")
+            raise ValueError("The Email field is required.")
         if not username:
-            raise ValueError("Users must have a username")
+            raise ValueError("The Username field is required.")
+        if not role:
+            raise ValueError("The Role field is required.")
 
         email = self.normalize_email(email)
+
+        valid_roles = [r[0] for r in User.ROLE_CHOICES]
+        if role not in valid_roles:
+            raise ValueError(
+                f"Invalid role '{role}'. Valid roles are: {', '.join(valid_roles)}"
+            )
+
         user = self.model(email=email, username=username, role=role, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
         return user
 
     def create_superuser(self, email, username, password=None, **extra_fields):
+        """Create and return a superuser."""
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
-        extra_fields.setdefault("role", "admin")
-        return self.create_user(email, username, password=password, **extra_fields)
+        role = "admin"
+
+        if extra_fields.get("is_staff") is not True:
+            raise ValueError("Superuser must have is_staff=True.")
+        if extra_fields.get("is_superuser") is not True:
+            raise ValueError("Superuser must have is_superuser=True.")
+
+        return self.create_user(email, username, role, password, **extra_fields)
 
 
 class User(AbstractBaseUser, PermissionsMixin):
+    """Custom user model supporting email and role-based accounts."""
+
     ROLE_CHOICES = [
         ("admin", "Admin"),
         ("branch-manager", "Branch Manager"),
@@ -42,73 +64,29 @@ class User(AbstractBaseUser, PermissionsMixin):
     id = models.AutoField(primary_key=True)
     username = models.CharField(max_length=255, unique=True)
     email = models.EmailField(unique=True)
-    role = models.CharField(max_length=50, choices=ROLE_CHOICES, default="Maintenancer")
+    role = models.CharField(
+        max_length=50,
+        choices=ROLE_CHOICES,
+        default="Maintenancer",
+        help_text=_("The role of the user in the system."),
+    )
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    # Optional foreign key reference
     primary_branch = models.ForeignKey(
         "Branch",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="primary_staff",
-        help_text="Primary branch assignment",
+        help_text=_("Primary branch assignment for this user."),
     )
 
-    def get_branches(self):
-        """Get all branches this user manages or is assigned to"""
-        if self.role in ["fleet-manager", "Maintenancer", "branch-manager"]:
-            return Branch.objects.filter(branch_managers__user=self)
-        else:
-            return Branch.objects.filter(
-                staff_assignments__user=self, staff_assignments__is_active=True
-            )
-
-    def get_primary_branch(self):
-        """Get the primary branch for this user"""
-        if self.primary_branch:
-            return self.primary_branch
-
-        # Try to get from managed branches
-        primary_managed = self.managed_branches.filter(is_primary=True).first()
-        if primary_managed:
-            return primary_managed.branch
-
-        # Try to get from assignments
-        primary_assignment = self.branch_assignments.filter(is_active=True).first()
-        if primary_assignment:
-            return primary_assignment.branch
-
-        return None
-
-    def can_access_branch(self, branch):
-        """Check if user can access a specific branch"""
-        if self.role == "admin":
-            return True
-
-        if self.role in ["fleet-manager", "Maintenancer", "branch-manager"]:
-            return self.managed_branches.filter(branch=branch, is_active=True).exists()
-
-        return self.branch_assignments.filter(branch=branch, is_active=True).exists()
-
-    # Fix for PermissionsMixin clash
-    groups = models.ManyToManyField(
-        "auth.Group",
-        verbose_name="groups",
-        blank=True,
-        related_name="custom_user_set",
-        related_query_name="custom_user",
-    )
-    user_permissions = models.ManyToManyField(
-        "auth.Permission",
-        verbose_name="user permissions",
-        blank=True,
-        related_name="custom_user_set",
-        related_query_name="custom_user",
-    )
-
+    # Attach the manager
     objects = UserManager()
 
     USERNAME_FIELD = "username"
@@ -116,6 +94,8 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     class Meta:
         db_table = "users"
+        verbose_name = _("user")
+        verbose_name_plural = _("users")
         indexes = [
             models.Index(fields=["email"]),
             models.Index(fields=["username"]),
@@ -123,6 +103,48 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return f"{self.username} ({self.role})"
+
+    # --- Custom methods ---
+    def get_branches(self):
+        """Return branches this user manages or is assigned to."""
+        from .models import Branch  # Local import to avoid circular import issues
+
+        if self.role in ["fleet-manager", "Maintenancer", "branch-manager"]:
+            return Branch.objects.filter(branch_managers__user=self)
+        return Branch.objects.filter(
+            staff_assignments__user=self, staff_assignments__is_active=True
+        )
+
+    def get_primary_branch(self):
+        """Return the primary branch for this user."""
+        if self.primary_branch:
+            return self.primary_branch
+
+        primary_managed = getattr(self, "managed_branches", None)
+        if primary_managed and primary_managed.filter(is_primary=True).exists():
+            return primary_managed.filter(is_primary=True).first().branch
+
+        primary_assignment = getattr(self, "branch_assignments", None)
+        if primary_assignment and primary_assignment.filter(is_active=True).exists():
+            return primary_assignment.filter(is_active=True).first().branch
+
+        return None
+
+    def can_access_branch(self, branch):
+        """Check whether this user can access a specific branch."""
+        if self.role == "admin":
+            return True
+        if self.role in ["fleet-manager", "Maintenancer", "branch-manager"]:
+            return (
+                getattr(self, "managed_branches", [])
+                .filter(branch=branch, is_active=True)
+                .exists()
+            )
+        return (
+            getattr(self, "branch_assignments", [])
+            .filter(branch=branch, is_active=True)
+            .exists()
+        )
 
 
 class UserActivityLog(models.Model):
@@ -462,3 +484,33 @@ class DashboardCache(models.Model):
 
     def __str__(self):
         return f"{self.cache_key} - {self.user_role}"
+
+
+# class AlertLog(models.Model):
+#     """Track all system alerts"""
+
+#     from track.models import Vehicle
+
+#     SEVERITY_CHOICES = [
+#         ("critical", "Critical"),
+#         ("high", "High"),
+#         ("medium", "Medium"),
+#         ("low", "Low"),
+#     ]
+
+#     vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE)
+#     alert_type = models.CharField(max_length=50)
+#     severity = models.CharField(max_length=20, choices=SEVERITY_CHOICES)
+#     message = models.TextField()
+#     location_lat = models.FloatField(null=True)
+#     location_lng = models.FloatField(null=True)
+#     location_address = models.CharField(max_length=255, blank=True)
+#     is_resolved = models.BooleanField(default=False)
+#     resolved_at = models.DateTimeField(null=True, blank=True)
+#     # resolved_by = models.ForeignKey(
+#     #     "user.User",
+#     #     on_delete=models.SET_NULL,
+#     #     null=True,
+#     #     related_name="resolved_alerts",
+#     # )
+#     created_at = models.DateTimeField(auto_now_add=True)
