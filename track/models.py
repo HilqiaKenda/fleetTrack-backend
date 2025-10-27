@@ -55,6 +55,8 @@ class Location(models.Model):
 class Vehicle(models.Model):
     """Vehicle/Truck information"""
 
+    STATUS_CHOICES = []
+
     truck_number = models.CharField(max_length=50, unique=True)
     make = models.CharField(max_length=50, blank=True)
     model = models.CharField(max_length=50, blank=True)
@@ -62,8 +64,12 @@ class Vehicle(models.Model):
     vin = models.CharField(max_length=17, unique=True, blank=True)
     license_plate = models.CharField(max_length=20, blank=True)
     is_active = models.BooleanField(default=True)
+    status = models.CharField(max_length=25, choices=STATUS_CHOICES, default="active")
     carrier = models.ForeignKey(
         Carrier, on_delete=models.CASCADE, related_name="vehicles"
+    )
+    branch = models.ForeignKey(
+        "user.Branch", on_delete=models.CASCADE, related_name="vehicles"
     )
 
     created_at = models.DateTimeField(auto_now_add=True)

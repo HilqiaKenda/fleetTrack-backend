@@ -2,7 +2,7 @@ from django.core.cache import cache
 from django.db.models import Count, Q, Sum
 from django.utils import timezone
 
-from rest_framework import status, viewsets
+from rest_framework import status, viewsets, filters
 from rest_framework.decorators import action
 from rest_framework.mixins import (
     CreateModelMixin,
@@ -19,7 +19,6 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from user.utilities.permissions import DriverOwnDataMixin, RoleRequiredMixin
 from track.models import AlertLog, Trip, UserActivityLog, Vehicle
 from user.serializers import CarrierSerializer, DriverSerializer
 from user.utilities.auth import CookieJWTAuthentication
@@ -36,16 +35,18 @@ from .serializers import (
 )
 
 # from utilities.permissions import
-from user.utilities.roles import (
-    CanManageAlerts,
-    CanManageMaintenance,
-    CanViewAnalytics,
-    CanViewReports,
-    CanManageTrips,
-    IsDriver,
-    IsAdmin,
-    get_user_permissions_summary,
+from user.utilities.permissions import (
+    RolePermission,
+    ScopedQuerysetMixin,
+    DriverMixin,
+    ROLE_ADMIN,
+    ROLE_DRIVER,
+    ROLE_FLEET_MANAGER,
+    ROLE_BRANCH_MANAGER,
+    MANAGER_ROLES,
 )
+
+
 from datetime import timedelta
 from dateutil.relativedelta import relativedelta
 
@@ -397,15 +398,11 @@ class UserManagementViewSet(
         return Response({"count": queryset.count(), "users": serializer.data})
 
 
-class AdminDashboardViewSet(RoleRequiredMixin, GenericViewSet):
+class AdminDashboardViewSet(GenericViewSet):
     permission_classes = [
         IsAuthenticated,
         IsAdminUser,
-        CanManageTrips,
-        CanManageMaintenance,
-        CanViewAnalytics,
-        CanManageAlerts,
-        CanViewReports,
+        RolePermission.for_roles([ROLE_ADMIN]),
     ]
 
     def get_serializer_class(self):
@@ -675,15 +672,17 @@ class AdminDashboardViewSet(RoleRequiredMixin, GenericViewSet):
         return ip
 
 
-class DriverDashboardViewSet(DriverOwnDataMixin, GenericViewSet):
+class DriverDashboardViewSet(GenericViewSet):
 
-    permission_classes = [IsAuthenticated, IsDriver, CanViewReports]
-    required_roles = ["admin", "fleet-manager"]
+    permission_classes = [
+        IsAuthenticated,
+        RolePermission.for_roles([ROLE_ADMIN, ROLE_DRIVER]),
+    ]
 
     @action(detail=False, methods=["get"], url_path="summary")
     def driver_summary(self, request):
         # driver_id = request.query_params.get("driver_id")
-        driver_id = 1
+        driver_id = 5
         if not driver_id:
             return Response(
                 {"status": False, "message": "Driver ID is required"},
@@ -756,11 +755,7 @@ class DriverViewSet(
 
     queryset = Driver.objects.all()
     serializer_class = DriverSerializer
-    permission_classes = [
-        IsAuthenticated,
-        IsDriver or IsAdmin or IsAdminUser,
-        CanManageTrips,
-    ]
+    permission_classes = [IsAuthenticated, RolePermission([ROLE_DRIVER, ROLE_ADMIN])]
 
     @action(detail=True, methods=["get"])
     def trips(self, request, pk=None):
@@ -803,3 +798,179 @@ class CarrierViewSet(
     queryset = Carrier.objects.all()
     serializer_class = CarrierSerializer
     permission_classes = [IsAuthenticated, IsAuthenticated]
+
+
+from .models import Branch, BranchManager, BranchAssignment
+from .serializers import (
+    BranchSerializer,
+    BranchListSerializer,
+    BranchDetailSerializer,
+    BranchManagerSerializer,
+    CreateBranchManagerSerializer,
+    BranchAssignmentSerializer,
+    BranchStatisticsSerializer,
+)
+
+
+class BranchViewSet(
+    ListModelMixin,
+    RetrieveModelMixin,
+    CreateModelMixin,
+    UpdateModelMixin,
+    DestroyModelMixin,
+    GenericViewSet,
+):
+    """
+    Branch management
+    """
+
+    queryset = Branch.objects.all().prefetch_related("branch_managers")
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["name", "code", "city", "region", "status"]
+    ordering_fields = ["name", "city", "region", "status", "created_at"]
+
+    def get_serializer_class(self):
+        if self.action == "list":
+            return BranchListSerializer
+        elif self.action == "retrieve":
+            return BranchDetailSerializer
+        return BranchSerializer
+
+    @action(detail=True, methods=["get"])
+    def managers(self, request, pk=None):
+        """Return all active managers for this branch."""
+        branch = self.get_object()
+        managers = branch.branch_managers.filter(is_active=True)
+        serializer = BranchManagerSerializer(managers, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["get"])
+    def statistics(self, request, pk=None):
+        """Return detailed statistics for a single branch."""
+        branch = self.get_object()
+        data = {
+            "branch_id": branch.id,
+            "branch_name": branch.name,
+            "total_vehicles": branch.get_vehicle_count(),
+            "active_vehicles": branch.get_active_vehicle_count(),
+            "inactive_vehicles": branch.get_vehicle_count()
+            - branch.get_active_vehicle_count(),
+            "total_drivers": branch.get_driver_count(),
+            "active_trips": 0,  # Integrate with Trip model later
+            "completed_trips": 0,
+            "maintenance_pending": 0,
+            "capacity_usage": (
+                f"{(branch.get_vehicle_count() / branch.capacity * 100):.1f}%"
+                if branch.capacity > 0
+                else "N/A"
+            ),
+        }
+        serializer = BranchStatisticsSerializer(data)
+        return Response(serializer.data)
+
+
+class BranchManagerViewSet(
+    ListModelMixin,
+    RetrieveModelMixin,
+    CreateModelMixin,
+    UpdateModelMixin,
+    DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
+    """
+    Branch Manager management.
+    """
+
+    queryset = BranchManager.objects.select_related("branch", "user")
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["user__username", "branch__name", "role"]
+    ordering_fields = ["assigned_date", "is_primary", "is_active"]
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return CreateBranchManagerSerializer
+        return BranchManagerSerializer
+
+    @action(detail=False, methods=["get"], url_path="by-branch/(?P<branch_id>[^/.]+)")
+    def by_branch(self, request, branch_id=None):
+        """List all active managers for a specific branch."""
+        managers = self.queryset.filter(branch_id=branch_id, is_active=True)
+        serializer = self.get_serializer(managers, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=["get"], url_path="by-user/(?P<user_id>[^/.]+)")
+    def by_user(self, request, user_id=None):
+        """List all branches managed by a given user."""
+        managers = self.queryset.filter(user_id=user_id, is_active=True)
+        serializer = self.get_serializer(managers, many=True)
+        return Response(serializer.data)
+
+
+class BranchAssignmentViewSet(
+    ListModelMixin,
+    RetrieveModelMixin,
+    CreateModelMixin,
+    UpdateModelMixin,
+    DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
+    """
+    Branch Assignments (staff/driver assignments).
+    """
+
+    queryset = BranchAssignment.objects.select_related("branch", "user")
+    serializer_class = BranchAssignmentSerializer
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["user__username", "branch__name", "assignment_type"]
+    ordering_fields = ["start_date", "end_date", "is_active"]
+
+    @action(detail=False, methods=["get"], url_path="by-branch/(?P<branch_id>[^/.]+)")
+    def by_branch(self, request, branch_id=None):
+        """List all active assignments in a branch."""
+        assignments = self.queryset.filter(branch_id=branch_id, is_active=True)
+        serializer = self.get_serializer(assignments, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=["get"], url_path="by-user/(?P<user_id>[^/.]+)")
+    def by_user(self, request, user_id=None):
+        """List all branch assignments for a user."""
+        assignments = self.queryset.filter(user_id=user_id, is_active=True)
+        serializer = self.get_serializer(assignments, many=True)
+        return Response(serializer.data)
+
+
+class BranchStatisticsViewSet(viewsets.GenericViewSet, ListModelMixin):
+    """
+    statistics across all branches.
+    """
+
+    serializer_class = BranchStatisticsSerializer
+
+    def list(self, request, *args, **kwargs):
+        """Return aggregated statistics for all branches."""
+        branches = Branch.objects.all()
+        data = []
+
+        for branch in branches:
+            data.append(
+                {
+                    "branch_id": branch.id,
+                    "branch_name": branch.name,
+                    "total_vehicles": branch.get_vehicle_count(),
+                    "active_vehicles": branch.get_active_vehicle_count(),
+                    "inactive_vehicles": branch.get_vehicle_count()
+                    - branch.get_active_vehicle_count(),
+                    "total_drivers": branch.get_driver_count(),
+                    "active_trips": 0,
+                    "completed_trips": 0,
+                    "maintenance_pending": 0,
+                    "capacity_usage": (
+                        f"{(branch.get_vehicle_count() / branch.capacity * 100):.1f}%"
+                        if branch.capacity > 0
+                        else "N/A"
+                    ),
+                }
+            )
+
+        serializer = self.get_serializer(data, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)

@@ -113,7 +113,7 @@ class TripViewSet(
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    @action(detail=True, methods=["patch"], url_path="update-status")
+    @action(detail=True, methods=["patch"], url_path="status")
     def update_status(self, request, pk=None):
         """Update the status of a trip (e.g., complete, active)"""
         try:

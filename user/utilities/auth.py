@@ -29,3 +29,13 @@ class CookieJWTAuthentication(JWTAuthentication):
 
         except Exception as exce:
             raise AuthenticationFailed(f"Unexpected error occurred: {str(exce)}")
+
+
+def is_admin_or_driver(user):
+    if not user.is_staff or not user.role == "admin" or not user.role == "driver":
+
+        return {
+            "status": False,
+            "detail": "You do not have permission to perform this action.",
+        }
+    return user

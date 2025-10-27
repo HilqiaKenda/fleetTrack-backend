@@ -261,17 +261,17 @@ class Branch(models.Model):
     def __str__(self):
         return f"{self.name} ({self.code})"
 
+    def get_driver_count(self):
+        """Get total number of drivers assigned to this branch"""
+        return self.drivers.count()
+
     def get_vehicle_count(self):
         """Get total number of vehicles in this branch"""
         return self.vehicles.count()
 
     def get_active_vehicle_count(self):
         """Get number of active vehicles in this branch"""
-        return self.vehicles.filter(status="active").count()
-
-    def get_driver_count(self):
-        """Get total number of drivers assigned to this branch"""
-        return self.branch_managers.filter(user__role="driver").count()
+        return self.vehicles.filter(is_active=True).count()
 
     def is_at_capacity(self):
         """Check if branch is at full capacity"""
@@ -454,6 +454,7 @@ class Driver(models.Model):
     license_number = models.CharField(max_length=50, unique=True)
     phone_number = models.CharField(max_length=20, blank=True)
     email = models.EmailField(blank=True)
+    branch = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name="drivers")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

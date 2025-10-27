@@ -1,338 +1,363 @@
+# permissions.py
+from rest_framework.permissions import BasePermission
 from rest_framework.exceptions import PermissionDenied
-from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
+from rest_framework.response import Response
+from rest_framework import status
+from functools import wraps
+from user.models import Branch
 
 
-class RoleRequiredMixin:
+# -------------------------------
+# 🔹 Central Role Definitions
+# -------------------------------
+ROLE_ADMIN = "admin"
+ROLE_FLEET_MANAGER = "fleet-manager"
+ROLE_MAINTENANCE = "Maintenancer"
+ROLE_DRIVER = "driver"
+ROLE_BRANCH_MANAGER = "branch-manager"
+
+ADMIN_ROLES = [ROLE_ADMIN]
+MANAGER_ROLES = [ROLE_ADMIN, ROLE_FLEET_MANAGER]
+MAINTENANCE_ROLES = [ROLE_ADMIN, ROLE_MAINTENANCE]
+ALL_ROLES = [ROLE_ADMIN, ROLE_FLEET_MANAGER, ROLE_MAINTENANCE, ROLE_DRIVER]
+
+
+# -------------------------------
+# 🔹 Generic DRF Permission
+# -------------------------------
+class RolePermission(BasePermission):
     """
-    Mixin to restrict access based on user roles
+    Generic permission that checks if user has one of the required roles.
     Usage:
-        class MyView(RoleRequiredMixin, APIView):
-            required_roles = ['admin', 'fleet-manager']
+        permission_classes = [RolePermission(['admin', 'fleet-manager'])]
     """
+
+    def __init__(self, allowed_roles=None):
+        self.allowed_roles = allowed_roles or []
+
+    def has_permission(self, request, view):
+        return (
+            request.user
+            and request.user.is_authenticated
+            and (not self.allowed_roles or request.user.role in self.allowed_roles)
+        )
+
+    @classmethod
+    def for_roles(cls, roles):
+        """
+        Create a new permission subclass for the given roles.
+        Example:
+            RolePermission.for_roles(['admin', 'driver'])
+        """
+
+        class _RolePermission(cls):
+            allowed_roles = roles
+
+        # Give it a unique name for clarity in DRF browsable API and debugging
+        _RolePermission.__name__ = f"RolePermission_{'_'.join(roles)}"
+        return _RolePermission
+
+
+# -------------------------------
+# 🔹 Unified Role-Based Mixin
+# -------------------------------
+class RolePermissionMixin:
+    """Reusable mixin to restrict access by role"""
 
     required_roles = []
 
     def check_role_permission(self):
-        if not self.request.user.is_authenticated:
+        user = self.request.user
+        if not user.is_authenticated:
             raise PermissionDenied("Authentication required.")
-
-        if not self.required_roles:
-            return True
-
-        if self.request.user.role not in self.required_roles:
+        if self.required_roles and user.role not in self.required_roles:
             raise PermissionDenied(
                 f"This action requires one of the following roles: {', '.join(self.required_roles)}"
             )
-
-        return True
 
     def dispatch(self, request, *args, **kwargs):
         self.check_role_permission()
         return super().dispatch(request, *args, **kwargs)
 
 
-class AdminOnlyMixin(RoleRequiredMixin):
-    """Restrict access to Admin only"""
-
-    required_roles = ["admin"]
-
-
-class FleetManagerMixin(RoleRequiredMixin):
-    """Restrict access to Fleet Manager and Admin"""
-
-    required_roles = ["admin", "fleet-manager"]
-
-
-class MaintenanceSupervisorMixin(RoleRequiredMixin):
-    """Restrict access to Maintenance Supervisor and Admin"""
-
-    required_roles = ["admin", "Maintenancer"]
-
-
-class DriverMixin(RoleRequiredMixin):
-    """Restrict access to Driver role"""
-
-    required_roles = ["driver"]
-
-
-class BranchManagerAccessMixin:
+# -------------------------------
+# 🔹 Unified Data Filtering Mixin
+# -------------------------------
+class ScopedQuerysetMixin:
     """
-    Mixin to filter querysets by user's branch access
-    Automatically filters data based on user's branch assignment
+    Automatically filter data based on user role:
+    - Admin: all data
+    - Fleet Manager & Maintenancer: own branch
+    - Driver: own records
     """
 
     branch_field = "branch"
+    driver_field = "driver"
 
     def get_queryset(self):
-        queryset = super().get_queryset()
+        qs = super().get_queryset()
         user = self.request.user
 
-        # Admin can see everything
-        if user.role == "admin":
-            return queryset
+        if user.role == ROLE_ADMIN:
+            return qs
 
-        # Fleet managers and maintenance supervisors see only their branch
-        if user.role in ["fleet-manager", "Maintenancer"]:
+        if user.role in [ROLE_FLEET_MANAGER, ROLE_MAINTENANCE]:
             if hasattr(user, "branch") and user.branch:
-                filter_kwargs = {self.branch_field: user.branch}
-                return queryset.filter(**filter_kwargs)
-            else:
-                # No branch assigned, return empty queryset
-                return queryset.none()
+                return qs.filter(**{self.branch_field: user.branch})
+            return qs.none()
 
-        # Drivers see only their own data
-        if user.role == "driver":
-            if hasattr(queryset.model, "driver"):
-                return queryset.filter(driver=user)
-            elif hasattr(queryset.model, "assigned_driver"):
-                return queryset.filter(assigned_driver=user)
+        if user.role == ROLE_DRIVER:
+            if hasattr(qs.model, self.driver_field):
+                return qs.filter(**{self.driver_field: user})
+            if hasattr(qs.model, "assigned_driver"):
+                return qs.filter(assigned_driver=user)
 
-        return queryset.none()
+        return qs.none()
 
 
-class DriverOwnDataMixin:
-    """
-    Mixin to ensure drivers can only access their own data
-    """
+# -------------------------------
+# 🔹 Specialized Mixins
+# -------------------------------
+class AdminOnlyMixin(RolePermissionMixin):
+    required_roles = ADMIN_ROLES
 
-    driver_field = "driver"  # Override if your model uses different field name
 
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        user = self.request.user
+class FleetManagerMixin(RolePermissionMixin):
+    required_roles = MANAGER_ROLES
 
-        # Non-drivers use parent queryset logic
-        if user.role != "driver":
-            return queryset
 
-        # Drivers only see their own data
-        filter_kwargs = {self.driver_field: user}
-        return queryset.filter(**filter_kwargs)
+class MaintenanceSupervisorMixin(RolePermissionMixin):
+    required_roles = MAINTENANCE_ROLES
 
-    def get_object(self):
-        obj = super().get_object()
-        user = self.request.user
 
-        # Drivers can only access their own objects
-        if user.role == "driver":
-            driver_value = getattr(obj, self.driver_field, None)
-            if driver_value != user:
-                raise PermissionDenied("You can only access your own data.")
-
-        return obj
+class DriverMixin(RolePermissionMixin):
+    required_roles = [ROLE_DRIVER]
 
 
 class ReadOnlyForDriversMixin:
-    """
-    Mixin to make views read-only for drivers
-    Drivers can only GET, others can perform all operations
-    """
+    """Drivers have read-only access"""
 
     def check_permissions(self, request):
         super().check_permissions(request)
+        if request.user.role == ROLE_DRIVER and request.method not in [
+            "GET",
+            "HEAD",
+            "OPTIONS",
+        ]:
+            raise PermissionDenied("Drivers have read-only access.")
 
-        if request.user.role == "driver":
-            if request.method not in ["GET", "HEAD", "OPTIONS"]:
-                raise PermissionDenied("Drivers have read-only access.")
 
-
-class MaintenanceDataAccessMixin:
+# -------------------------------
+# 🔹 Unified Maintenance Access
+# -------------------------------
+class MaintenanceAccessMixin:
     """
-    Mixin for maintenance-related data access
-    - Admin: Full access
-    - Maintenance Supervisor: Full maintenance operations
-    - Fleet Manager: Read and create requests
+    Unified maintenance access control:
+    - Admin / Maintenancer: full access
+    - Fleet Manager: read & create only
     """
 
-    def check_maintenance_permission(self, obj=None):
-        user = self.request.user
-        method = self.request.method
+    def check_permission(self, obj=None):
+        user, method = self.request.user, self.request.method
 
-        # Admin has full access
-        if user.role == "admin":
+        if user.role in [ROLE_ADMIN, ROLE_MAINTENANCE]:
             return True
 
-        # Maintenance supervisor has full access
-        if user.role == "Maintenancer":
+        if user.role == ROLE_FLEET_MANAGER and method in [
+            "GET",
+            "HEAD",
+            "OPTIONS",
+            "POST",
+        ]:
             return True
 
-        # Fleet manager can view and create
-        if user.role == "fleet-manager":
-            if method in ["GET", "HEAD", "OPTIONS", "POST"]:
-                return True
-            raise PermissionDenied(
-                "Fleet managers can only view and create maintenance requests."
-            )
-
-        raise PermissionDenied("You don't have permission to access maintenance data.")
+        raise PermissionDenied(
+            "You don't have permission for this maintenance operation."
+        )
 
     def get_object(self):
         obj = super().get_object()
-        self.check_maintenance_permission(obj)
+        self.check_permission(obj)
         return obj
 
 
-class AlertAccessMixin:
-    """
-    Mixin for alert data access
-    Filters alerts based on user role and permissions
-    """
+# -------------------------------
+# 🔹 Unified Alerts & Analytics Access
+# -------------------------------
+class AlertsAccessMixin(ScopedQuerysetMixin):
+    """Filter alerts based on user role"""
 
     def get_queryset(self):
-        queryset = super().get_queryset()
+        qs = super().get_queryset()
         user = self.request.user
 
-        # Admin sees all alerts
-        if user.role == "admin":
-            return queryset
+        if user.role == ROLE_ADMIN:
+            return qs
 
-        # Fleet manager sees branch alerts
-        if user.role == "fleet-manager":
-            if hasattr(user, "branch") and user.branch:
-                return queryset.filter(branch=user.branch)
-            return queryset.none()
-
-        # Maintenance supervisor sees maintenance-related alerts
-        if user.role == "Maintenancer":
-            return queryset.filter(
-                alert_type__in=["maintenance", "breakdown", "service_due"]
+        if user.role == ROLE_FLEET_MANAGER:
+            return (
+                qs.filter(branch=user.branch) if hasattr(user, "branch") else qs.none()
             )
 
-        # Driver sees own alerts
-        if user.role == "driver":
-            return queryset.filter(driver=user)
+        if user.role == ROLE_MAINTENANCE:
+            return qs.filter(alert_type__in=["maintenance", "breakdown", "service_due"])
 
-        return queryset.none()
+        if user.role == ROLE_DRIVER:
+            return qs.filter(driver=user)
+
+        return qs.none()
 
 
 class AnalyticsAccessMixin:
-    """
-    Mixin for analytics and reporting access
-    Ensures proper data scoping for analytics views
-    """
+    """Define accessible data scope for analytics"""
 
     def get_analytics_scope(self):
-        """
-        Returns the scope of data user can access for analytics
-        Returns: dict with filters to apply
-        """
         user = self.request.user
 
-        if user.role == "admin":
-            return {}  # No filters, see everything
+        if user.role == ROLE_ADMIN:
+            return {}
 
-        if user.role == "fleet-manager":
-            if hasattr(user, "branch") and user.branch:
-                return {"branch": user.branch}
-            return {"branch__isnull": True}  # Return empty results
+        if user.role == ROLE_FLEET_MANAGER:
+            return (
+                {"branch": user.branch}
+                if hasattr(user, "branch")
+                else {"branch__isnull": True}
+            )
 
-        if user.role == "Maintenancer":
-            # Maintenance supervisor sees maintenance data only
+        if user.role == ROLE_MAINTENANCE:
             return {"report_type": "maintenance"}
 
-        if user.role == "driver":
+        if user.role == ROLE_DRIVER:
             return {"driver": user}
 
-        return {"pk__isnull": True}  # Return empty results
+        return {"pk__isnull": True}
 
 
-class FinancialDataAccessMixin:
-    """
-    Mixin for financial data access - Admin only
-    """
+# -------------------------------
+# 🔹 Unified System & Financial Access
+# -------------------------------
+class AdminOnlyAccessMixin(RolePermissionMixin):
+    """For system health, financial data, or admin dashboards"""
 
-    def dispatch(self, request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            raise PermissionDenied("Authentication required.")
-
-        if request.user.role != "admin":
-            raise PermissionDenied("Only administrators can access financial data.")
-
-        return super().dispatch(request, *args, **kwargs)
+    required_roles = ADMIN_ROLES
 
 
-class SystemHealthAccessMixin:
-    """
-    Mixin for system health and monitoring - Admin only
-    """
-
-    def dispatch(self, request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            raise PermissionDenied("Authentication required.")
-
-        if request.user.role != "admin":
-            raise PermissionDenied("Only administrators can access system health data.")
-
-        return super().dispatch(request, *args, **kwargs)
-
-
+# -------------------------------
+# 🔹 Unified User & Trip Management
+# -------------------------------
 class UserManagementAccessMixin:
-    """
-    Mixin for user management operations
-    - Admin: Full access
-    - Fleet Manager: Read-only access
-    """
+    """Admin full control, Fleet Manager read-only"""
 
-    def check_user_management_permission(self):
-        user = self.request.user
-        method = self.request.method
+    def check_permission(self):
+        user, method = self.request.user, self.request.method
 
-        if user.role == "admin":
+        if user.role == ROLE_ADMIN:
             return True
 
-        if user.role == "fleet-manager":
-            if method in ["GET", "HEAD", "OPTIONS"]:
-                return True
-            raise PermissionDenied(
-                "Fleet managers have read-only access to user management."
-            )
+        if user.role == ROLE_FLEET_MANAGER and method in ["GET", "HEAD", "OPTIONS"]:
+            return True
 
         raise PermissionDenied("You don't have permission to manage users.")
 
     def dispatch(self, request, *args, **kwargs):
-        self.check_user_management_permission()
+        self.check_permission()
         return super().dispatch(request, *args, **kwargs)
 
 
-class TripManagementMixin:
-    """
-    Mixin for trip management with role-based access
-    """
-
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        user = self.request.user
-
-        # Admin sees all trips
-        if user.role == "admin":
-            return queryset
-
-        # Fleet manager sees branch trips
-        if user.role == "fleet-manager":
-            if hasattr(user, "branch") and user.branch:
-                return queryset.filter(branch=user.branch)
-            return queryset.none()
-
-        # Driver sees only their trips
-        if user.role == "driver":
-            return queryset.filter(driver=user)
-
-        return queryset.none()
+class TripAccessMixin(ScopedQuerysetMixin):
+    """Unified trip access"""
 
     def check_trip_permission(self, trip):
-        """Check if user can modify a specific trip"""
         user = self.request.user
 
-        if user.role == "admin":
+        if user.role == ROLE_ADMIN:
             return True
 
-        if user.role == "fleet-manager":
-            if hasattr(trip, "branch") and hasattr(user, "branch"):
-                if trip.branch == user.branch:
-                    return True
-            raise PermissionDenied("You can only manage trips in your branch.")
+        if user.role == ROLE_FLEET_MANAGER:
+            if hasattr(user, "branch") and trip.branch == user.branch:
+                return True
+            raise PermissionDenied("You can only manage trips within your branch.")
 
-        if user.role == "driver":
-            raise PermissionDenied("Drivers cannot modify trips.")
+        if user.role == ROLE_DRIVER:
+            if hasattr(trip, "driver") and trip.driver == user:
+                return True
+            raise PermissionDenied("Drivers cannot modify other trips.")
 
-        return False
+        raise PermissionDenied("Access denied.")
+
+
+# -------------------------------
+# 🔹 Helper Decorators & Utilities
+# -------------------------------
+def role_required(*roles):
+    """Decorator for function-based views"""
+
+    def decorator(view_func):
+        @wraps(view_func)
+        def wrapper(request, *args, **kwargs):
+            user = request.user
+            if not user.is_authenticated:
+                return Response(
+                    {"detail": "Authentication required."},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+            if user.role not in roles:
+                return Response(
+                    {"detail": "You do not have permission to access this resource."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            return view_func(request, *args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+def user_can_access_vehicle(user, vehicle):
+    if user.role == ROLE_ADMIN:
+        return True
+    if user.role == ROLE_FLEET_MANAGER:
+        return hasattr(vehicle, "branch") and vehicle.branch == getattr(
+            user, "branch", None
+        )
+    if user.role == ROLE_DRIVER:
+        return hasattr(vehicle, "assigned_driver") and vehicle.assigned_driver == user
+    return False
+
+
+def user_can_access_trip(user, trip):
+    if user.role == ROLE_ADMIN:
+        return True
+    if user.role == ROLE_FLEET_MANAGER:
+        return hasattr(trip, "branch") and trip.branch == getattr(user, "branch", None)
+    if user.role == ROLE_DRIVER:
+        return hasattr(trip, "driver") and trip.driver == user
+    return False
+
+
+def get_accessible_branches(user):
+    if user.role == ROLE_ADMIN:
+        return Branch.objects.all()
+    if user.role in [ROLE_FLEET_MANAGER, ROLE_MAINTENANCE] and hasattr(user, "branch"):
+        return [user.branch]
+    return []
+
+
+def get_user_permissions_summary(user):
+    """Frontend-friendly summary of user permissions"""
+    return {
+        "can_manage_users": user.role == ROLE_ADMIN,
+        "can_manage_vehicles": user.role in [ROLE_ADMIN, ROLE_FLEET_MANAGER],
+        "can_manage_trips": user.role in [ROLE_ADMIN, ROLE_FLEET_MANAGER],
+        "can_manage_maintenance": user.role
+        in [ROLE_ADMIN, ROLE_MAINTENANCE, ROLE_FLEET_MANAGER],
+        "can_view_reports": True,
+        "can_view_analytics": user.role
+        in [ROLE_ADMIN, ROLE_FLEET_MANAGER, ROLE_MAINTENANCE],
+        "can_manage_alerts": user.role
+        in [ROLE_ADMIN, ROLE_FLEET_MANAGER, ROLE_MAINTENANCE],
+        "is_admin": user.role == ROLE_ADMIN,
+        "is_fleet_manager": user.role == ROLE_FLEET_MANAGER,
+        "is_driver": user.role == ROLE_DRIVER,
+        "is_maintenance_supervisor": user.role == ROLE_MAINTENANCE,
+    }

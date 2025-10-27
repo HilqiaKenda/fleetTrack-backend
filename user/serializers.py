@@ -162,8 +162,8 @@ class BranchSerializer(serializers.ModelSerializer):
             "longitude",
             "status",
             "capacity",
-            "vehicle_count",
-            "active_vehicle_count",
+            # "vehicle_count",
+            # "active_vehicle_count",
             "driver_count",
             "is_at_capacity",
             "created_at",
@@ -445,7 +445,6 @@ class BranchStatisticsSerializer(serializers.Serializer):
 
     branch_id = serializers.IntegerField()
     branch_name = serializers.CharField()
-    total_vehicles = serializers.IntegerField()
     active_vehicles = serializers.IntegerField()
     inactive_vehicles = serializers.IntegerField()
     total_drivers = serializers.IntegerField()
