@@ -300,7 +300,6 @@ def role_required(*roles):
 def user_can_access_vehicle(user, vehicle):
     """Check if user can access given vehicle."""
     if user.role == ROLE_ADMIN:
->>>>>>> Stashed changes
         return True
     if user.role == ROLE_ORGANIZATION and hasattr(vehicle, "branch"):
         return vehicle.branch.organization == getattr(user, "organization", None)
@@ -314,7 +313,6 @@ def user_can_access_vehicle(user, vehicle):
 def user_can_access_trip(user, trip):
     """Check if user can access given trip."""
     if user.role == ROLE_ADMIN:
->>>>>>> Stashed changes
         return True
     if user.role == ROLE_ORGANIZATION and hasattr(trip, "branch"):
         return trip.branch.organization == getattr(user, "organization", None)
@@ -328,7 +326,6 @@ def user_can_access_trip(user, trip):
 def get_accessible_branches(user):
     """Return branches visible to user."""
     if user.role == ROLE_ADMIN:
->>>>>>> Stashed changes
         return Branch.objects.all()
     if user.role == ROLE_ORGANIZATION and hasattr(user, "organization"):
         return Branch.objects.filter(organization=user.organization)
