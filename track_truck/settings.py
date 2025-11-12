@@ -10,21 +10,22 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
-from pathlib import Path
 from datetime import timedelta
+from decouple import config
+from pathlib import Path
+from dotenv import load_dotenv
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv()
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-wexrpb#uwe$-^^$vdoppqn*wr*1^2g5mcr-!on*+ynf!&%#wk8"
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+SECRET_KEY = config("BACKEND_SECRET_KEY")
 
 
 # Application definition
@@ -53,16 +54,23 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = False
 
-
-# ALLOWED_HOSTS = ["*"]
 ALLOWED_HOSTS = [
     "localhost",
     "127.0.0.1",
     "fleet-track-km.vercel.app",
     "fleettrack-backend-1.onrender.com",
+    "https://dashboard-routematrix.vercel.app/ ",
 ]
+
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:3000",
+    "https://dashboard-routematrix.vercel.app/",
+]
+
+
+CORS_ALLOW_CREDENTIALS = True
 
 
 CORS_ALLOWED_ORIGINS = [
@@ -70,9 +78,12 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:8000",
     "https://fleet-track-km.vercel.app",
     "https://fleet-track-frontend.vercel.app",
+    "https://dashboard-routematrix.vercel.app",
     "https://fleettrack-backend-1.onrender.com",
 ]
 
+
+JWT_ALGORITHM = "HS256"
 
 ROOT_URLCONF = "track_truck.urls"
 
@@ -162,19 +173,56 @@ CACHES = {
 }
 
 
+# """
 # REST Framework Configuration
+# """
+# REST_FRAMEWORK = {
+#     "DEFAULT_AUTHENTICATION_CLASSES": ("user.utilities.auth.CookieJWTAuthentication",),
+#     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
+#     "DEFAULT_RENDERER_CLASSES": ("rest_framework.renderers.JSONRenderer",),
+#     "DEFAULT_PARSER_CLASSES": (
+#         "rest_framework.parsers.JSONParser",
+#         "rest_framework.parsers.FormParser",
+#         "rest_framework.parsers.MultiPartParser",
+#     ),
+#     "EXCEPTION_HANDLER": "rest_framework.views.exception_handler",
+#     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+#     "PAGE_SIZE": 20,
+# }
+
+
+"""
+REST Framework Configuration
+"""
 REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": ("user.utilities.auth.CookieJWTAuthentication",),
-    "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
-    "DEFAULT_RENDERER_CLASSES": ("rest_framework.renderers.JSONRenderer",),
-    "DEFAULT_PARSER_CLASSES": (
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "rest_framework.authentication.TokenAuthentication",
+        "rest_framework.authentication.SessionAuthentication",
+        "rest_framework.authentication.BasicAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
+    "DEFAULT_RENDERER_CLASSES": [
+        "rest_framework.renderers.JSONRenderer",
+    ],
+    "DEFAULT_PARSER_CLASSES": [
         "rest_framework.parsers.JSONParser",
         "rest_framework.parsers.FormParser",
         "rest_framework.parsers.MultiPartParser",
-    ),
+    ],
     "EXCEPTION_HANDLER": "rest_framework.views.exception_handler",
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.UserRateThrottle",
+        "rest_framework.throttling.AnonRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "user": "800/minute",
+        "anon": "800/minute",
+    },
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
-    "PAGE_SIZE": 20,
+    "PAGE_SIZE": 50,
 }
 
 
@@ -200,3 +248,28 @@ SIMPLE_JWT = {
     "TOKEN_BLACKLIST_ENABLED": True,
     "JTI_CLAIM": "jti",
 }
+
+
+"""
+ Security & Deployment Settings
+"""
+
+# SECURITY WARNING: don't run with debug turned on in production!
+DEBUG = config("DEBUG_STATUS", default=True, cast=bool)
+
+
+# Redirect all HTTP requests to HTTPS
+SECURE_SSL_REDIRECT = True
+
+# Use secure cookies for session and CSRF protection
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+
+# Recommended extra headers (optional but good for hardening)
+SECURE_BROWSER_XSS_FILTER = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = "DENY"
+
+SECURE_HSTS_SECONDS = 31536000
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_HSTS_PRELOAD = True

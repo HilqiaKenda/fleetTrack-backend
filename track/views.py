@@ -49,7 +49,7 @@ class LocationViewSet(
 ):
     queryset = Location.objects.all()
     serializer_class = LocationSerializer
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    # permission_classes = [IsAuthenticated, IsAdminUser]
 
     @action(detail=False, methods=["get"])
     def search(self, request):
@@ -70,7 +70,7 @@ class VehicleViewSet(
     UpdateModelMixin,
     GenericViewSet,
 ):
-    permission_classes = [IsAdminUser, IsAuthenticated]
+    # permission_classes = [IsAdminUser, IsAuthenticated]
     queryset = Vehicle.objects.select_related("carrier")
     serializer_class = VehicleSerializer
 
@@ -91,7 +91,7 @@ class TripViewSet(
     GenericViewSet,
 ):
 
-    permission_classes = [IsAuthenticated]
+    # permission_classes = [IsAuthenticated]
     queryset = Trip.objects.select_related(
         "driver", "co_driver", "vehicle__carrier"
     ).prefetch_related("events__location")
@@ -227,7 +227,7 @@ class TripEventViewSet(
     UpdateModelMixin,
     GenericViewSet,
 ):
-    permission_classes = [IsAuthenticated]
+    # permission_classes = [IsAuthenticated]
     queryset = TripEvent.objects.select_related("trip", "location")
 
     def get_serializer_class(self):
@@ -257,7 +257,7 @@ class TripEventViewSet(
 
 
 class SearchViewSet(GenericViewSet):
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    # permission_classes = [IsAuthenticated, IsAdminUser]
 
     @action(detail=False, methods=["get"], url_path="search")
     def search(self, request):

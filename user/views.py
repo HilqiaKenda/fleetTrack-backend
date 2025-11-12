@@ -1,31 +1,53 @@
+import logging
+import re
+from datetime import timedelta
+
+from dateutil.relativedelta import relativedelta
 from django.core.cache import cache
 from django.db.models import Count, Q, Sum
 from django.utils import timezone
-
-from rest_framework import status, viewsets, filters
+from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.mixins import (
     CreateModelMixin,
-    RetrieveModelMixin,
-    UpdateModelMixin,
     DestroyModelMixin,
     ListModelMixin,
+    RetrieveModelMixin,
+    UpdateModelMixin,
 )
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet
-
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
 from rest_framework_simplejwt.tokens import RefreshToken
-
 from track.models import AlertLog, Trip, UserActivityLog, Vehicle
-from user.serializers import CarrierSerializer, DriverSerializer
-from user.utilities.auth import CookieJWTAuthentication
 from track.serializers import TripSerializer
 
-from .models import Carrier, Driver, User
+from user.serializers import CarrierSerializer, DriverSerializer
+from user.utilities.auth import CookieJWTAuthentication
+
+# from utilities.permissions import
+from user.utilities.permissions import (
+    MANAGER_ROLES,
+    ROLE_ADMIN,
+    ROLE_BRANCH_MANAGER,
+    ROLE_DRIVER,
+    ROLE_FLEET_MANAGER,
+    DriverMixin,
+    RolePermission,
+    ScopedQuerysetMixin,
+)
+
+from .models import Branch, BranchAssignment, BranchManager, Carrier, Driver, User
 from .serializers import (
+    BranchAssignmentSerializer,
+    BranchDetailSerializer,
+    BranchListSerializer,
+    BranchManagerSerializer,
+    BranchSerializer,
+    BranchStatisticsSerializer,
+    CreateBranchManagerSerializer,
     EmptySerializer,
     LoginSerializer,
     RegisterSerializer,
@@ -34,245 +56,146 @@ from .serializers import (
     UserSerializer,
 )
 
-# from utilities.permissions import
-from user.utilities.permissions import (
-    RolePermission,
-    ScopedQuerysetMixin,
-    DriverMixin,
-    ROLE_ADMIN,
-    ROLE_DRIVER,
-    ROLE_FLEET_MANAGER,
-    ROLE_BRANCH_MANAGER,
-    MANAGER_ROLES,
-)
-
-
-from datetime import timedelta
-from dateutil.relativedelta import relativedelta
-
-import re
-import logging
-
-
 logger = logging.getLogger(__name__)
 
 
-class CookieTokenMixin:
+class RegisterViewSet(GenericViewSet):
     """
-    Mixin to handle JWT token cookie operations
-    """
-
-    def set_auth_cookies(self, response, user):
-        """Set access and refresh tokens in HTTP-only cookies"""
-        refresh = RefreshToken.for_user(user)
-        access_token = str(refresh.access_token)
-        refresh_token = str(refresh)
-
-        # Set access token cookie
-        response.set_cookie(
-            key="access_token",
-            value=access_token,
-            httponly=True,
-            secure=True,
-            samesite="Strict",
-            max_age=3600,  # 1 hour
-            path="/",
-        )
-
-        # Set refresh token cookie
-        response.set_cookie(
-            key="refresh_token",
-            value=refresh_token,
-            httponly=True,
-            secure=True,
-            samesite="Strict",
-            max_age=86400 * 7,  # 7 days
-            path="/",
-        )
-
-        return response
-
-    def clear_auth_cookies(self, response):
-        """Clear authentication cookies"""
-        response.delete_cookie("access_token", path="/")
-        response.delete_cookie("refresh_token", path="/")
-        return response
-
-
-class RegisterViewSet(CookieTokenMixin, CreateModelMixin, viewsets.GenericViewSet):
-    """
-    Body: {
-        "username": "string",
-        "email": "string",
-        "password": "string",
-        "password2": "string",
-        "role": "string" (optional, defaults to "Driver")
-    }
+    Register a new user and return JWT tokens in response
     """
 
     serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
-    authentication_classes = []
 
     def create(self, request, *args, **kwargs):
-        """Register a new user and set JWT tokens in HTTP-only cookies"""
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
 
-        response = Response(
+        refresh = RefreshToken.for_user(user)
+
+        return Response(
             {
                 "user": UserSerializer(user).data,
+                "access_token": str(refresh.access_token),
+                "refresh_token": str(refresh),
                 "message": "User registered successfully",
             },
             status=status.HTTP_201_CREATED,
         )
 
-        # Set authentication cookies
-        response = self.set_auth_cookies(response, user)
 
-        return response
-
-
-class LoginViewSet(CookieTokenMixin, viewsets.GenericViewSet):
+class LoginViewSet(GenericViewSet):
     """
-    User Login ViewSet
-
-    POST /api/api.v1.1/login/
-    Body: {
-        "username": "string",
-        "password": "string"
-    }
+    Authenticate user and return JWT tokens in response
     """
 
     serializer_class = LoginSerializer
     permission_classes = [AllowAny]
-    authentication_classes = []
 
     def create(self, request, *args, **kwargs):
-        """Authenticate user and set JWT tokens in HTTP-only cookies"""
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         user = serializer.validated_data["user"]
+        refresh = RefreshToken.for_user(user)
 
-        response = Response(
+        return Response(
             {
                 "user": UserSerializer(user).data,
+                "access_token": str(refresh.access_token),
+                "refresh_token": str(refresh),
                 "message": "Login successful",
             },
             status=status.HTTP_200_OK,
         )
 
-        # Set authentication cookies
-        response = self.set_auth_cookies(response, user)
 
-        return response
-
-
-class LogoutViewSet(CookieTokenMixin, viewsets.GenericViewSet):
+class LogoutViewSet(GenericViewSet):
     """
-    User Logout ViewSet
+    Logout user by blacklisting refresh token
     """
 
     permission_classes = [IsAuthenticated]
-    authentication_classes = [CookieJWTAuthentication]
     serializer_class = UserSerializer
 
     def create(self, request, *args, **kwargs):
-        """Logout user by blacklisting refresh token and clearing cookies"""
-        refresh_token = request.COOKIES.get("refresh_token")
-
-        # Try to blacklist the refresh token if it exists
-        if refresh_token:
-            try:
-                token = RefreshToken(refresh_token)
-                token.blacklist()
-            except (TokenError, Exception):
-                # Token might already be blacklisted or invalid
-                # Continue with logout anyway
-                pass
-
-        response = Response(
-            {"message": "Successfully logged out"},
-            status=status.HTTP_200_OK,
-        )
-
-        # Clear authentication cookies
-        response = self.clear_auth_cookies(response)
-
-        return response
-
-
-class RefreshTokenViewSet(CookieTokenMixin, viewsets.GenericViewSet):
-    """
-    Token Refresh ViewSet
-    """
-
-    permission_classes = [AllowAny]
-    authentication_classes = []
-    serializer_class = UserSerializer
-
-    def create(self, request, *args, **kwargs):
-        """Refresh access token using refresh token from cookie"""
-        refresh_token = request.COOKIES.get("refresh_token")
+        refresh_token = request.data.get("refresh_token")
 
         if not refresh_token:
             return Response(
-                {"detail": "Refresh token not found in cookies."},
+                {"detail": "Refresh token required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+        except TokenError:
+            return Response(
+                {"detail": "Invalid or expired refresh token."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            {"message": "Successfully logged out."},
+            status=status.HTTP_200_OK,
+        )
+
+
+class RefreshTokenViewSet(GenericViewSet):
+    """
+    Refresh access token using refresh token
+    """
+
+    permission_classes = [AllowAny]
+    serializer_class = UserSerializer
+
+    def create(self, request, *args, **kwargs):
+        refresh_token = request.data.get("refresh_token")
+
+        if not refresh_token:
+            return Response(
+                {"detail": "Refresh token is required."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         try:
             token = RefreshToken(refresh_token)
 
-            # Check if token is blacklisted
+            # Check if blacklisted
             jti = token.get("jti")
             if BlacklistedToken.objects.filter(token__jti=jti).exists():
-                response = Response(
+                return Response(
                     {"detail": "Token has been blacklisted. Please login again."},
                     status=status.HTTP_401_UNAUTHORIZED,
                 )
-                response = self.clear_auth_cookies(response)
-                return response
 
-            # Generate new access token
-            access_token = str(token.access_token)
+            new_access = str(token.access_token)
 
-            response = Response(
-                {"message": "Token refreshed successfully"},
+            return Response(
+                {
+                    "access_token": new_access,
+                    "refresh_token": str(token),
+                    "message": "Token refreshed successfully",
+                },
                 status=status.HTTP_200_OK,
             )
 
-            # Set new access token in cookie
-            response.set_cookie(
-                key="access_token",
-                value=access_token,
-                httponly=True,
-                secure=True,
-                samesite="Strict",
-                max_age=3600,  # 1 hour
-                path="/",
-            )
-
-            return response
-
         except TokenError:
-            response = Response(
-                {"detail": "Invalid or expired refresh token. Please login again."},
+            return Response(
+                {"detail": "Invalid or expired refresh token."},
                 status=status.HTTP_401_UNAUTHORIZED,
             )
-            response = self.clear_auth_cookies(response)
-            return response
 
 
-class MeViewSet(RetrieveModelMixin, UpdateModelMixin, viewsets.GenericViewSet):
+class MeViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
     """
     Current User Profile ViewSet
     """
 
     permission_classes = [IsAuthenticated]
-    authentication_classes = [CookieJWTAuthentication]
+    # authentication_classes = [CookieJWTAuthentication]
 
     def get_object(self):
         """Return the current authenticated user"""
@@ -311,13 +234,13 @@ class MeViewSet(RetrieveModelMixin, UpdateModelMixin, viewsets.GenericViewSet):
         return self.update(request, *args, **kwargs)
 
 
-class CheckAuthViewSet(viewsets.GenericViewSet):
+class CheckAuthViewSet(GenericViewSet):
     """
     Check Authentication Status ViewSet
     """
 
     permission_classes = [IsAuthenticated]
-    authentication_classes = [CookieJWTAuthentication]
+    # authentication_classes = [CookieJWTAuthentication]
     serializer_class = UserSerializer
 
     def list(self, request, *args, **kwargs):
@@ -337,7 +260,7 @@ class UserManagementViewSet(
     CreateModelMixin,
     UpdateModelMixin,
     DestroyModelMixin,
-    viewsets.GenericViewSet,
+    GenericViewSet,
 ):
     """
     User Management ViewSet - For admin user management
@@ -346,7 +269,7 @@ class UserManagementViewSet(
     queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated, IsAdminUser]
-    authentication_classes = [CookieJWTAuthentication]
+    # authentication_classes = [CookieJWTAuthentication]
 
     def get_queryset(self):
         """Filter users based on role permissions"""
@@ -435,7 +358,7 @@ class AdminDashboardViewSet(GenericViewSet):
 
             # Check cache
             cache_key = f"admin_dashboard_{period}_{branch_ids}_{include_inactive}"
-            print(request.user.role)
+            # print(request.user.role)
             cached_data = cache.get(cache_key)
             if cached_data:
                 return Response(
@@ -673,7 +596,6 @@ class AdminDashboardViewSet(GenericViewSet):
 
 
 class DriverDashboardViewSet(GenericViewSet):
-
     permission_classes = [
         IsAuthenticated,
         RolePermission.for_roles([ROLE_ADMIN, ROLE_DRIVER]),
@@ -752,7 +674,6 @@ class DriverViewSet(
     UpdateModelMixin,
     GenericViewSet,
 ):
-
     queryset = Driver.objects.all()
     serializer_class = DriverSerializer
     permission_classes = [IsAuthenticated, RolePermission([ROLE_DRIVER, ROLE_ADMIN])]
@@ -798,18 +719,6 @@ class CarrierViewSet(
     queryset = Carrier.objects.all()
     serializer_class = CarrierSerializer
     permission_classes = [IsAuthenticated, IsAuthenticated]
-
-
-from .models import Branch, BranchManager, BranchAssignment
-from .serializers import (
-    BranchSerializer,
-    BranchListSerializer,
-    BranchDetailSerializer,
-    BranchManagerSerializer,
-    CreateBranchManagerSerializer,
-    BranchAssignmentSerializer,
-    BranchStatisticsSerializer,
-)
 
 
 class BranchViewSet(
@@ -875,7 +784,7 @@ class BranchManagerViewSet(
     CreateModelMixin,
     UpdateModelMixin,
     DestroyModelMixin,
-    viewsets.GenericViewSet,
+    GenericViewSet,
 ):
     """
     Branch Manager management.
@@ -912,7 +821,7 @@ class BranchAssignmentViewSet(
     CreateModelMixin,
     UpdateModelMixin,
     DestroyModelMixin,
-    viewsets.GenericViewSet,
+    GenericViewSet,
 ):
     """
     Branch Assignments (staff/driver assignments).
@@ -939,7 +848,7 @@ class BranchAssignmentViewSet(
         return Response(serializer.data)
 
 
-class BranchStatisticsViewSet(viewsets.GenericViewSet, ListModelMixin):
+class BranchStatisticsViewSet(GenericViewSet, ListModelMixin):
     """
     statistics across all branches.
     """
@@ -974,3 +883,212 @@ class BranchStatisticsViewSet(viewsets.GenericViewSet, ListModelMixin):
 
         serializer = self.get_serializer(data, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+# class CookieTokenMixin:
+#     """
+#     Mixin to handle JWT token cookie operations
+#     """
+
+#     def set_auth_cookies(self, response, user):
+#         """Set access and refresh tokens in HTTP-only cookies"""
+#         refresh = RefreshToken.for_user(user)
+#         access_token = str(refresh.access_token)
+#         refresh_token = str(refresh)
+
+#         # Set access token cookie
+#         response.set_cookie(
+#             key="access_token",
+#             value=access_token,
+#             httponly=True,
+#             secure=True,
+#             samesite="Strict",
+#             max_age=3600,  # 1 hour
+#             path="/",
+#         )
+
+#         # Set refresh token cookie
+#         response.set_cookie(
+#             key="refresh_token",
+#             value=refresh_token,
+#             httponly=True,
+#             secure=True,
+#             samesite="Strict",
+#             max_age=86400 * 7,  # 7 days
+#             path="/",
+#         )
+
+#         return response
+
+#     def clear_auth_cookies(self, response):
+#         """Clear authentication cookies"""
+#         response.delete_cookie("access_token", path="/")
+#         response.delete_cookie("refresh_token", path="/")
+#         return response
+
+
+# class RegisterViewSet(CookieTokenMixin, CreateModelMixin, GenericViewSet):
+#     """
+#     Body: {
+#         "username": "string",
+#         "email": "string",
+#         "password": "string",
+#         "password2": "string",
+#         "role": "string" (optional, defaults to "Driver")
+#     }
+#     """
+
+#     serializer_class = RegisterSerializer
+#     permission_classes = [AllowAny]
+#     # authentication_classes = []
+
+#     def create(self, request, *args, **kwargs):
+#         """Register a new user and set JWT tokens in HTTP-only cookies"""
+#         serializer = self.get_serializer(data=request.data)
+#         serializer.is_valid(raise_exception=True)
+#         user = serializer.save()
+
+#         response = Response(
+#             {
+#                 "user": UserSerializer(user).data,
+#                 "message": "User registered successfully",
+#             },
+#             status=status.HTTP_201_CREATED,
+#         )
+
+#         # Set authentication cookies
+#         response = self.set_auth_cookies(response, user)
+
+#         return response
+
+
+# class LoginViewSet(CookieTokenMixin, GenericViewSet):
+#     """
+#     User Login ViewSet
+
+#     POST /api/api.v1.1/login/
+#     Body: {
+#         "username": "string",
+#         "password": "string"
+#     }
+#     """
+
+#     serializer_class = LoginSerializer
+#     permission_classes = [AllowAny]
+#     # authentication_classes = []
+
+#     def create(self, request, *args, **kwargs):
+#         """Authenticate user and set JWT tokens in HTTP-only cookies"""
+#         serializer = self.get_serializer(data=request.data)
+#         serializer.is_valid(raise_exception=True)
+
+#         user = serializer.validated_data["user"]
+
+#         response = Response(
+#             {
+#                 "user": UserSerializer(user).data,
+#                 "message": "Login successful",
+#             },
+#             status=status.HTTP_200_OK,
+#         )
+
+#         # Set authentication cookies
+#         response = self.set_auth_cookies(response, user)
+
+#         return response
+
+
+# class LogoutViewSet(CookieTokenMixin, GenericViewSet):
+#     """
+#     User Logout ViewSet
+#     """
+
+#     permission_classes = [IsAuthenticated]
+#     # authentication_classes = [CookieJWTAuthentication]
+#     serializer_class = UserSerializer
+
+#     def create(self, request, *args, **kwargs):
+#         """Logout user by blacklisting refresh token and clearing cookies"""
+#         refresh_token = request.COOKIES.get("refresh_token")
+
+#         # Try to blacklist the refresh token if it exists
+#         if refresh_token:
+#             try:
+#                 token = RefreshToken(refresh_token)
+#                 token.blacklist()
+#             except (TokenError, Exception):
+#                 # Token might already be blacklisted or invalid
+#                 # Continue with logout anyway
+#                 pass
+
+#         response = Response(
+#             {"message": "Successfully logged out"},
+#             status=status.HTTP_200_OK,
+#         )
+
+#         # Clear authentication cookies
+#         response = self.clear_auth_cookies(response)
+
+#         return response
+
+
+# class RefreshTokenViewSet(CookieTokenMixin, GenericViewSet):
+#     """
+#     Token Refresh ViewSet
+#     """
+
+#     permission_classes = [AllowAny]
+#     # authentication_classes = []
+#     serializer_class = UserSerializer
+
+#     def create(self, request, *args, **kwargs):
+#         """Refresh access token using refresh token from cookie"""
+#         refresh_token = request.COOKIES.get("refresh_token")
+
+#         if not refresh_token:
+#             return Response(
+#                 {"detail": "Refresh token not found in cookies."},
+#                 status=status.HTTP_400_BAD_REQUEST,
+#             )
+
+#         try:
+#             token = RefreshToken(refresh_token)
+
+#             # Check if token is blacklisted
+#             jti = token.get("jti")
+#             if BlacklistedToken.objects.filter(token__jti=jti).exists():
+#                 response = Response(
+#                     {"detail": "Token has been blacklisted. Please login again."},
+#                     status=status.HTTP_401_UNAUTHORIZED,
+#                 )
+#                 response = self.clear_auth_cookies(response)
+#                 return response
+
+#             # Generate new access token
+#             access_token = str(token.access_token)
+
+#             response = Response(
+#                 {"message": "Token refreshed successfully"},
+#                 status=status.HTTP_200_OK,
+#             )
+
+#             # Set new access token in cookie
+#             response.set_cookie(
+#                 key="access_token",
+#                 value=access_token,
+#                 httponly=True,
+#                 secure=True,
+#                 samesite="Strict",
+#                 max_age=3600,  # 1 hour
+#                 path="/",
+#             )
+
+#             return response
+
+#         except TokenError:
+#             response = Response(
+#                 {"detail": "Invalid or expired refresh token. Please login again."},
+#                 status=status.HTTP_401_UNAUTHORIZED,
+#             )
+#             response = self.clear_auth_cookies(response)
+#             return response
