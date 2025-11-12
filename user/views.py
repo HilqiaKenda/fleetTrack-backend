@@ -56,6 +56,41 @@ from .serializers import (
     UserSerializer,
 )
 
+<<<<<<< Updated upstream
+=======
+from .models import Branch, BranchManager, BranchAssignment
+from .serializers import (
+    BranchSerializer,
+    BranchListSerializer,
+    BranchDetailSerializer,
+    BranchManagerSerializer,
+    CreateBranchManagerSerializer,
+    BranchAssignmentSerializer,
+    BranchStatisticsSerializer,
+)
+
+# from utilities.permissions import
+from user.utilities.permissions import (
+    RolePermission,
+    ScopedQuerysetMixin,
+    DriverMixin,
+    ROLE_ADMIN,
+    ROLE_ORGANIZATION,
+    ROLE_DRIVER,
+    ROLE_FLEET_MANAGER,
+    ROLE_BRANCH_MANAGER,
+    MANAGER_ROLES,
+)
+
+
+from datetime import timedelta
+from dateutil.relativedelta import relativedelta
+
+import re
+import logging
+
+
+>>>>>>> Stashed changes
 logger = logging.getLogger(__name__)
 
 
@@ -676,7 +711,7 @@ class DriverViewSet(
 ):
     queryset = Driver.objects.all()
     serializer_class = DriverSerializer
-    permission_classes = [IsAuthenticated, RolePermission([ROLE_DRIVER, ROLE_ADMIN])]
+    # permission_classes = [IsAuthenticated, RolePermission([ROLE_DRIVER, ROLE_ADMIN])]
 
     @action(detail=True, methods=["get"])
     def trips(self, request, pk=None):
@@ -718,7 +753,11 @@ class CarrierViewSet(
 ):
     queryset = Carrier.objects.all()
     serializer_class = CarrierSerializer
+<<<<<<< Updated upstream
     permission_classes = [IsAuthenticated, IsAuthenticated]
+=======
+    # permission_classes = [IsAuthenticated, IsAuthenticated]
+>>>>>>> Stashed changes
 
 
 class BranchViewSet(

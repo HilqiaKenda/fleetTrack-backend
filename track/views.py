@@ -17,6 +17,15 @@ from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from django.utils import timezone
 from datetime import datetime, timedelta
 
+from user.utilities.permissions import (
+    RolePermission,
+    ROLE_ADMIN,
+    ROLE_FLEET_MANAGER,
+    ROLE_MAINTENANCE,
+    ROLE_DRIVER,
+    ROLE_BRANCH_MANAGER,
+)
+
 from user.models import Driver
 from .models import (
     Location,
@@ -49,7 +58,16 @@ class LocationViewSet(
 ):
     queryset = Location.objects.all()
     serializer_class = LocationSerializer
-    # permission_classes = [IsAuthenticated, IsAdminUser]
+    # permission_classes = [
+    #     IsAuthenticated,
+    #     RolePermission.for_roles(
+    #         [
+    #             ROLE_ADMIN,
+    #             ROLE_FLEET_MANAGER,
+    #             ROLE_BRANCH_MANAGER,
+    #         ]
+    #     ),
+    # ]
 
     @action(detail=False, methods=["get"])
     def search(self, request):
@@ -70,7 +88,18 @@ class VehicleViewSet(
     UpdateModelMixin,
     GenericViewSet,
 ):
-    # permission_classes = [IsAdminUser, IsAuthenticated]
+    # permission_classes = [
+    #     IsAuthenticated,
+    #     RolePermission.for_roles(
+    #         [
+    #             ROLE_ADMIN,
+    #             ROLE_FLEET_MANAGER,
+    #             ROLE_MAINTENANCE,
+    #             ROLE_DRIVER,
+    #             ROLE_BRANCH_MANAGER,
+    #         ]
+    #     ),
+    # ]
     queryset = Vehicle.objects.select_related("carrier")
     serializer_class = VehicleSerializer
 
@@ -91,7 +120,16 @@ class TripViewSet(
     GenericViewSet,
 ):
 
-    # permission_classes = [IsAuthenticated]
+    # permission_classes = [
+    #     IsAuthenticated,
+    #     RolePermission.for_roles(
+    #         [
+    #             ROLE_ADMIN,
+    #             ROLE_FLEET_MANAGER,
+    #             ROLE_BRANCH_MANAGER,
+    #         ]
+    #     ),
+    # ]
     queryset = Trip.objects.select_related(
         "driver", "co_driver", "vehicle__carrier"
     ).prefetch_related("events__location")
@@ -227,7 +265,17 @@ class TripEventViewSet(
     UpdateModelMixin,
     GenericViewSet,
 ):
-    # permission_classes = [IsAuthenticated]
+    # permission_classes = [
+    #     IsAuthenticated,
+    #     RolePermission.for_roles(
+    #         [
+    #             ROLE_ADMIN,
+    #             ROLE_FLEET_MANAGER,
+    #             ROLE_DRIVER,
+    #             ROLE_BRANCH_MANAGER,
+    #         ]
+    #     ),
+    # ]
     queryset = TripEvent.objects.select_related("trip", "location")
 
     def get_serializer_class(self):

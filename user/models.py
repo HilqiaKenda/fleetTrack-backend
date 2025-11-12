@@ -55,9 +55,10 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     ROLE_CHOICES = [
         ("admin", "Admin"),
+        ("organization", "Organization"),
         ("branch-manager", "Branch Manager"),
         ("fleet-manager", "Fleet Manager"),
-        ("Maintenancer", "Maintenancer"),
+        ("maintenancer", "Maintenancer"),
         ("driver", "Driver"),
     ]
 
@@ -67,7 +68,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     role = models.CharField(
         max_length=50,
         choices=ROLE_CHOICES,
-        default="Maintenancer",
+        default="maintenancer",
         help_text=_("The role of the user in the system."),
     )
     is_active = models.BooleanField(default=True)
@@ -75,16 +76,6 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
-    # Optional foreign key reference
-    primary_branch = models.ForeignKey(
-        "Branch",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="primary_staff",
-        help_text=_("Primary branch assignment for this user."),
-    )
 
     # Attach the manager
     objects = UserManager()
@@ -172,6 +163,82 @@ class UserActivityLog(models.Model):
         return f"{self.user.username} - {self.action} at {self.timestamp}"
 
 
+class Organization(models.Model):
+    """
+    Represents a top-level organization/company entity.
+    Each organization can own multiple branches, vehicles, and users.
+    """
+
+    STATUS_CHOICES = [
+        ("active", "Active"),
+        ("suspended", "Suspended"),
+        ("inactive", "Inactive"),
+    ]
+
+    name = models.CharField(
+        max_length=255, unique=True, help_text=_("Organization name")
+    )
+    code = models.CharField(
+        max_length=10,
+        unique=True,
+        help_text=_("Unique short code identifier (e.g., ORG001, TFC, KLM)"),
+    )
+    registration_number = models.CharField(
+        max_length=100, blank=True, help_text=_("Company registration or tax number")
+    )
+    email = models.EmailField(blank=True, null=True)
+    phone_regex = RegexValidator(
+        regex=r"^\+?1?\d{9,15}$",
+        message=_(
+            "Phone number must be in format: '+999999999'. Up to 15 digits allowed."
+        ),
+    )
+    phone_number = models.CharField(
+        validators=[phone_regex],
+        max_length=17,
+        blank=True,
+        help_text=_("Primary contact number"),
+    )
+    address = models.TextField(blank=True, help_text=_("Head office address"))
+    website = models.URLField(blank=True, null=True)
+    logo = models.ImageField(upload_to="organization_logos/", null=True, blank=True)
+
+    # Operational details
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="active")
+    industry = models.CharField(max_length=100, blank=True)
+    description = models.TextField(blank=True)
+
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "organizations"
+        ordering = ["name"]
+        verbose_name = _("Organization")
+        verbose_name_plural = _("Organizations")
+        indexes = [
+            models.Index(fields=["name"]),
+            models.Index(fields=["code"]),
+            models.Index(fields=["status"]),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.code})"
+
+    def get_branch_count(self):
+        """Return total branches under this organization."""
+        return self.branches.count()
+
+    def get_user_count(self):
+        """Return total users under this organization."""
+        return self.users.count()
+
+    def get_active_branches(self):
+        """Return all active branches for this organization."""
+        return self.branches.filter(status="active")
+
+
 class Carrier(models.Model):
     """Carrier/Company information"""
 
@@ -203,6 +270,12 @@ class Branch(models.Model):
         ("maintenance", "Under Maintenance"),
     ]
 
+    organization = models.ForeignKey(
+        "Organization",
+        on_delete=models.CASCADE,
+        related_name="branches",
+        help_text=_("The organization this branch belongs to."),
+    )
     name = models.CharField(max_length=255, unique=True)
     code = models.CharField(
         max_length=10, unique=True, help_text="Short code for branch (e.g., KLA, MBS)"

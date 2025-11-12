@@ -1,4 +1,5 @@
 # permissions.py
+<<<<<<< Updated upstream
 from functools import wraps
 
 from rest_framework import status
@@ -8,28 +9,58 @@ from rest_framework.response import Response
 from user.models import Branch
 
 # 🔹 Central Role Definitions
+=======
+
+from functools import wraps
+from rest_framework import status
+from rest_framework.permissions import BasePermission
+from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
+from user.models import Branch
+
+
+# === ROLE CONSTANTS ===
+>>>>>>> Stashed changes
 ROLE_ADMIN = "admin"
+ROLE_ORGANIZATION = "organization"
 ROLE_FLEET_MANAGER = "fleet-manager"
-ROLE_MAINTENANCE = "Maintenancer"
+ROLE_MAINTENANCE = "maintenancer"
 ROLE_DRIVER = "driver"
 ROLE_BRANCH_MANAGER = "branch-manager"
 
+# === ROLE GROUPS ===
 ADMIN_ROLES = [ROLE_ADMIN]
-MANAGER_ROLES = [ROLE_ADMIN, ROLE_FLEET_MANAGER]
-MAINTENANCE_ROLES = [ROLE_ADMIN, ROLE_MAINTENANCE]
-ALL_ROLES = [ROLE_ADMIN, ROLE_FLEET_MANAGER, ROLE_MAINTENANCE, ROLE_DRIVER]
+ORGANIZATION_ROLES = [
+    ROLE_ORGANIZATION,
+    ROLE_FLEET_MANAGER,
+    ROLE_MAINTENANCE,
+    ROLE_DRIVER,
+    ROLE_BRANCH_MANAGER,
+]
+MANAGER_ROLES = [ROLE_ADMIN, ROLE_ORGANIZATION, ROLE_FLEET_MANAGER]
+MAINTENANCE_ROLES = [ROLE_ADMIN, ROLE_ORGANIZATION, ROLE_MAINTENANCE]
+ALL_ROLES = [
+    ROLE_ADMIN,
+    ROLE_ORGANIZATION,
+    ROLE_FLEET_MANAGER,
+    ROLE_MAINTENANCE,
+    ROLE_DRIVER,
+    ROLE_BRANCH_MANAGER,
+]
 
 
+<<<<<<< Updated upstream
 # 🔹 Generic DRF Permission
+=======
+>>>>>>> Stashed changes
 class RolePermission(BasePermission):
     """
-    Generic permission that checks if user has one of the required roles.
+    DRF permission that checks if user has one of the allowed roles.
     Usage:
-        permission_classes = [RolePermission(['admin', 'fleet-manager'])]
+        permission_classes = [RolePermission.for_roles(['admin', 'fleet-manager'])]
     """
 
-    def __init__(self, allowed_roles=None):
-        self.allowed_roles = allowed_roles or []
+    allowed_roles = []
 
     def has_permission(self, request, view):
         return (
@@ -40,23 +71,21 @@ class RolePermission(BasePermission):
 
     @classmethod
     def for_roles(cls, roles):
-        """
-        Create a new permission subclass for the given roles.
-        Example:
-            RolePermission.for_roles(['admin', 'driver'])
-        """
+        """Factory method for specific role permissions."""
 
         class _RolePermission(cls):
             allowed_roles = roles
 
-        # Give it a unique name for clarity in DRF browsable API and debugging
         _RolePermission.__name__ = f"RolePermission_{'_'.join(roles)}"
         return _RolePermission
 
 
+<<<<<<< Updated upstream
 # 🔹 Unified Role-Based Mixin
+=======
+>>>>>>> Stashed changes
 class RolePermissionMixin:
-    """Reusable mixin to restrict access by role"""
+    """Reusable mixin to enforce role-based access control on views."""
 
     required_roles = []
 
@@ -74,12 +103,16 @@ class RolePermissionMixin:
         return super().dispatch(request, *args, **kwargs)
 
 
+<<<<<<< Updated upstream
 # 🔹 Unified Data Filtering Mixin
+=======
+>>>>>>> Stashed changes
 class ScopedQuerysetMixin:
     """
-    Automatically filter data based on user role:
+    Automatically filter queryset by user's scope:
     - Admin: all data
-    - Fleet Manager & Maintenancer: own branch
+    - Organization: all its branches' data
+    - Fleet Manager / Maintenancer: own branch
     - Driver: own records
     """
 
@@ -90,14 +123,24 @@ class ScopedQuerysetMixin:
         qs = super().get_queryset()
         user = self.request.user
 
+        if not user.is_authenticated:
+            return qs.none()
+
+        # Admins see all
         if user.role == ROLE_ADMIN:
             return qs
 
-        if user.role in [ROLE_FLEET_MANAGER, ROLE_MAINTENANCE]:
+        # Organization-level: can see all branches under their organization
+        if user.role == ROLE_ORGANIZATION and hasattr(user, "organization"):
+            return qs.filter(**{"branch__organization": user.organization})
+
+        # Branch-based roles
+        if user.role in [ROLE_FLEET_MANAGER, ROLE_MAINTENANCE, ROLE_BRANCH_MANAGER]:
             if hasattr(user, "branch") and user.branch:
                 return qs.filter(**{self.branch_field: user.branch})
             return qs.none()
 
+        # Driver-specific filtering
         if user.role == ROLE_DRIVER:
             if hasattr(qs.model, self.driver_field):
                 return qs.filter(**{self.driver_field: user})
@@ -107,9 +150,16 @@ class ScopedQuerysetMixin:
         return qs.none()
 
 
+<<<<<<< Updated upstream
 # 🔹 Specialized Mixins
+=======
+>>>>>>> Stashed changes
 class AdminOnlyMixin(RolePermissionMixin):
     required_roles = ADMIN_ROLES
+
+
+class OrganizationOnlyMixin(RolePermissionMixin):
+    required_roles = ORGANIZATION_ROLES
 
 
 class FleetManagerMixin(RolePermissionMixin):
@@ -125,7 +175,7 @@ class DriverMixin(RolePermissionMixin):
 
 
 class ReadOnlyForDriversMixin:
-    """Drivers have read-only access"""
+    """Restrict drivers to read-only access."""
 
     def check_permissions(self, request):
         super().check_permissions(request)
@@ -137,10 +187,13 @@ class ReadOnlyForDriversMixin:
             raise PermissionDenied("Drivers have read-only access.")
 
 
+<<<<<<< Updated upstream
 # 🔹 Unified Maintenance Access
+=======
+>>>>>>> Stashed changes
 class MaintenanceAccessMixin:
     """
-    Unified maintenance access control:
+    Maintenance access control:
     - Admin / Maintenancer: full access
     - Fleet Manager: read & create only
     """
@@ -169,9 +222,12 @@ class MaintenanceAccessMixin:
         return obj
 
 
+<<<<<<< Updated upstream
 # 🔹 Unified Alerts & Analytics Access
+=======
+>>>>>>> Stashed changes
 class AlertsAccessMixin(ScopedQuerysetMixin):
-    """Filter alerts based on user role"""
+    """Filter alerts based on user role."""
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -179,23 +235,17 @@ class AlertsAccessMixin(ScopedQuerysetMixin):
 
         if user.role == ROLE_ADMIN:
             return qs
-
-        if user.role == ROLE_FLEET_MANAGER:
-            return (
-                qs.filter(branch=user.branch) if hasattr(user, "branch") else qs.none()
-            )
-
+        if user.role == ROLE_FLEET_MANAGER and hasattr(user, "branch"):
+            return qs.filter(branch=user.branch)
         if user.role == ROLE_MAINTENANCE:
             return qs.filter(alert_type__in=["maintenance", "breakdown", "service_due"])
-
         if user.role == ROLE_DRIVER:
             return qs.filter(driver=user)
-
         return qs.none()
 
 
 class AnalyticsAccessMixin:
-    """Define accessible data scope for analytics"""
+    """Define accessible data scope for analytics."""
 
     def get_analytics_scope(self):
         user = self.request.user
@@ -203,12 +253,11 @@ class AnalyticsAccessMixin:
         if user.role == ROLE_ADMIN:
             return {}
 
-        if user.role == ROLE_FLEET_MANAGER:
-            return (
-                {"branch": user.branch}
-                if hasattr(user, "branch")
-                else {"branch__isnull": True}
-            )
+        if user.role == ROLE_ORGANIZATION and hasattr(user, "organization"):
+            return {"branch__organization": user.organization}
+
+        if user.role == ROLE_FLEET_MANAGER and hasattr(user, "branch"):
+            return {"branch": user.branch}
 
         if user.role == ROLE_MAINTENANCE:
             return {"report_type": "maintenance"}
@@ -219,6 +268,7 @@ class AnalyticsAccessMixin:
         return {"pk__isnull": True}
 
 
+<<<<<<< Updated upstream
 # 🔹 Unified System & Financial Access
 class AdminOnlyAccessMixin(RolePermissionMixin):
     """For system health, financial data, or admin dashboards"""
@@ -227,15 +277,16 @@ class AdminOnlyAccessMixin(RolePermissionMixin):
 
 
 # 🔹 Unified User & Trip Management
+=======
+>>>>>>> Stashed changes
 class UserManagementAccessMixin:
-    """Admin full control, Fleet Manager read-only"""
+    """Admin full control, Fleet Manager read-only."""
 
     def check_permission(self):
         user, method = self.request.user, self.request.method
 
         if user.role == ROLE_ADMIN:
             return True
-
         if user.role == ROLE_FLEET_MANAGER and method in ["GET", "HEAD", "OPTIONS"]:
             return True
 
@@ -247,7 +298,7 @@ class UserManagementAccessMixin:
 
 
 class TripAccessMixin(ScopedQuerysetMixin):
-    """Unified trip access"""
+    """Unified trip access."""
 
     def check_trip_permission(self, trip):
         user = self.request.user
@@ -255,22 +306,27 @@ class TripAccessMixin(ScopedQuerysetMixin):
         if user.role == ROLE_ADMIN:
             return True
 
-        if user.role == ROLE_FLEET_MANAGER:
-            if hasattr(user, "branch") and trip.branch == user.branch:
+        if user.role == ROLE_ORGANIZATION and hasattr(user, "organization"):
+            if trip.branch.organization == user.organization:
                 return True
-            raise PermissionDenied("You can only manage trips within your branch.")
 
-        if user.role == ROLE_DRIVER:
-            if hasattr(trip, "driver") and trip.driver == user:
+        if user.role == ROLE_FLEET_MANAGER and hasattr(user, "branch"):
+            if trip.branch == user.branch:
                 return True
-            raise PermissionDenied("Drivers cannot modify other trips.")
+
+        if user.role == ROLE_DRIVER and getattr(trip, "driver", None) == user:
+            return True
 
         raise PermissionDenied("Access denied.")
 
 
+<<<<<<< Updated upstream
 # 🔹 Helper Decorators & Utilities
+=======
+# === DECORATORS ===
+>>>>>>> Stashed changes
 def role_required(*roles):
-    """Decorator for function-based views"""
+    """Decorator for function-based views enforcing role access."""
 
     def decorator(view_func):
         @wraps(view_func)
@@ -283,8 +339,7 @@ def role_required(*roles):
                 )
             if user.role not in roles:
                 return Response(
-                    {"detail": "You do not have permission to access this resource."},
-                    status=status.HTTP_403_FORBIDDEN,
+                    {"detail": "Permission denied."}, status=status.HTTP_403_FORBIDDEN
                 )
             return view_func(request, *args, **kwargs)
 
@@ -294,40 +349,63 @@ def role_required(*roles):
 
 
 def user_can_access_vehicle(user, vehicle):
+<<<<<<< Updated upstream
     if "admin" == ROLE_ADMIN:
         #  if request.user == ROLE_ADMIN:
+=======
+    """Check if user can access given vehicle."""
+    if user.role == ROLE_ADMIN:
+>>>>>>> Stashed changes
         return True
+    if user.role == ROLE_ORGANIZATION and hasattr(vehicle, "branch"):
+        return vehicle.branch.organization == getattr(user, "organization", None)
     if user.role == ROLE_FLEET_MANAGER:
-        return hasattr(vehicle, "branch") and vehicle.branch == getattr(
-            user, "branch", None
-        )
+        return getattr(vehicle, "branch", None) == getattr(user, "branch", None)
     if user.role == ROLE_DRIVER:
-        return hasattr(vehicle, "assigned_driver") and vehicle.assigned_driver == user
+        return getattr(vehicle, "assigned_driver", None) == user
     return False
 
 
 def user_can_access_trip(user, trip):
+<<<<<<< Updated upstream
     if "admin" == ROLE_ADMIN:
         #  if request.user == ROLE_ADMIN:
+=======
+    """Check if user can access given trip."""
+    if user.role == ROLE_ADMIN:
+>>>>>>> Stashed changes
         return True
+    if user.role == ROLE_ORGANIZATION and hasattr(trip, "branch"):
+        return trip.branch.organization == getattr(user, "organization", None)
     if user.role == ROLE_FLEET_MANAGER:
-        return hasattr(trip, "branch") and trip.branch == getattr(user, "branch", None)
+        return getattr(trip, "branch", None) == getattr(user, "branch", None)
     if user.role == ROLE_DRIVER:
-        return hasattr(trip, "driver") and trip.driver == user
+        return getattr(trip, "driver", None) == user
     return False
 
 
 def get_accessible_branches(user):
+<<<<<<< Updated upstream
     if "admin" == ROLE_ADMIN:
         #  if request.user == ROLE_ADMIN:
+=======
+    """Return branches visible to user."""
+    if user.role == ROLE_ADMIN:
+>>>>>>> Stashed changes
         return Branch.objects.all()
-    if user.role in [ROLE_FLEET_MANAGER, ROLE_MAINTENANCE] and hasattr(user, "branch"):
+    if user.role == ROLE_ORGANIZATION and hasattr(user, "organization"):
+        return Branch.objects.filter(organization=user.organization)
+    if user.role in [
+        ROLE_FLEET_MANAGER,
+        ROLE_MAINTENANCE,
+        ROLE_BRANCH_MANAGER,
+    ] and hasattr(user, "branch"):
         return [user.branch]
     return []
 
 
 def get_user_permissions_summary(user):
-    """Frontend-friendly summary of user permissions"""
+    """Frontend-friendly summary of user permissions."""
     return {
         "can_manage_users": "admin" == ROLE_ADMIN,
         # "can_manage_user": user.role == ROLE_ADMIN,
