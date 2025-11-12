@@ -259,7 +259,7 @@ DEBUG = config("DEBUG_STATUS", default=True, cast=bool)
 
 
 # Redirect all HTTP requests to HTTPS
-SECURE_SSL_REDIRECT = True
+# SECURE_SSL_REDIRECT = True
 
 # Use secure cookies for session and CSRF protection
 SESSION_COOKIE_SECURE = True
