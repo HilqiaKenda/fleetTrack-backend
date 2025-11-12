@@ -57,7 +57,10 @@ from .serializers import (
 )
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
 from .models import Branch, BranchManager, BranchAssignment
 from .serializers import (
     BranchSerializer,
@@ -76,6 +79,10 @@ from user.utilities.permissions import (
     DriverMixin,
     ROLE_ADMIN,
     ROLE_ORGANIZATION,
+<<<<<<< Updated upstream
+    ROLE_ORGANIZATION,
+=======
+>>>>>>> Stashed changes
     ROLE_DRIVER,
     ROLE_FLEET_MANAGER,
     ROLE_BRANCH_MANAGER,
@@ -712,6 +719,10 @@ class DriverViewSet(
     queryset = Driver.objects.all()
     serializer_class = DriverSerializer
     # permission_classes = [IsAuthenticated, RolePermission([ROLE_DRIVER, ROLE_ADMIN])]
+<<<<<<< Updated upstream
+    # permission_classes = [IsAuthenticated, RolePermission([ROLE_DRIVER, ROLE_ADMIN])]
+=======
+>>>>>>> Stashed changes
 
     @action(detail=True, methods=["get"])
     def trips(self, request, pk=None):
@@ -754,7 +765,11 @@ class CarrierViewSet(
     queryset = Carrier.objects.all()
     serializer_class = CarrierSerializer
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     permission_classes = [IsAuthenticated, IsAuthenticated]
+=======
+    # permission_classes = [IsAuthenticated, IsAuthenticated]
+>>>>>>> Stashed changes
 =======
     # permission_classes = [IsAuthenticated, IsAuthenticated]
 >>>>>>> Stashed changes

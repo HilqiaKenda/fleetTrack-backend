@@ -58,6 +58,7 @@ CORS_ALLOW_ALL_ORIGINS = False
 
 ALLOWED_HOSTS = [
     "localhost:3000",
+    "localhost:3000",
     "127.0.0.1",
     "fleet-track-km.vercel.app",
     "fleettrack-backend-1.onrender.com",
@@ -75,6 +76,7 @@ CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
+    "http://127.0.0.1:3000",
     "http://127.0.0.1:3000",
     "https://fleet-track-km.vercel.app",
     "https://fleet-track-frontend.vercel.app",

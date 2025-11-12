@@ -26,6 +26,15 @@ from user.utilities.permissions import (
     ROLE_BRANCH_MANAGER,
 )
 
+from user.utilities.permissions import (
+    RolePermission,
+    ROLE_ADMIN,
+    ROLE_FLEET_MANAGER,
+    ROLE_MAINTENANCE,
+    ROLE_DRIVER,
+    ROLE_BRANCH_MANAGER,
+)
+
 from user.models import Driver
 from .models import (
     Location,
@@ -68,6 +77,16 @@ class LocationViewSet(
     #         ]
     #     ),
     # ]
+    # permission_classes = [
+    #     IsAuthenticated,
+    #     RolePermission.for_roles(
+    #         [
+    #             ROLE_ADMIN,
+    #             ROLE_FLEET_MANAGER,
+    #             ROLE_BRANCH_MANAGER,
+    #         ]
+    #     ),
+    # ]
 
     @action(detail=False, methods=["get"])
     def search(self, request):
@@ -100,6 +119,18 @@ class VehicleViewSet(
     #         ]
     #     ),
     # ]
+    # permission_classes = [
+    #     IsAuthenticated,
+    #     RolePermission.for_roles(
+    #         [
+    #             ROLE_ADMIN,
+    #             ROLE_FLEET_MANAGER,
+    #             ROLE_MAINTENANCE,
+    #             ROLE_DRIVER,
+    #             ROLE_BRANCH_MANAGER,
+    #         ]
+    #     ),
+    # ]
     queryset = Vehicle.objects.select_related("carrier")
     serializer_class = VehicleSerializer
 
@@ -120,6 +151,16 @@ class TripViewSet(
     GenericViewSet,
 ):
 
+    # permission_classes = [
+    #     IsAuthenticated,
+    #     RolePermission.for_roles(
+    #         [
+    #             ROLE_ADMIN,
+    #             ROLE_FLEET_MANAGER,
+    #             ROLE_BRANCH_MANAGER,
+    #         ]
+    #     ),
+    # ]
     # permission_classes = [
     #     IsAuthenticated,
     #     RolePermission.for_roles(
@@ -276,6 +317,17 @@ class TripEventViewSet(
     #         ]
     #     ),
     # ]
+    # permission_classes = [
+    #     IsAuthenticated,
+    #     RolePermission.for_roles(
+    #         [
+    #             ROLE_ADMIN,
+    #             ROLE_FLEET_MANAGER,
+    #             ROLE_DRIVER,
+    #             ROLE_BRANCH_MANAGER,
+    #         ]
+    #     ),
+    # ]
     queryset = TripEvent.objects.select_related("trip", "location")
 
     def get_serializer_class(self):
@@ -305,6 +357,7 @@ class TripEventViewSet(
 
 
 class SearchViewSet(GenericViewSet):
+    # permission_classes = [IsAuthenticated]
     # permission_classes = [IsAuthenticated, IsAdminUser]
 
     @action(detail=False, methods=["get"], url_path="search")
