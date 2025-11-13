@@ -69,7 +69,7 @@ class Vehicle(models.Model):
         Carrier, on_delete=models.CASCADE, related_name="vehicles"
     )
     branch = models.ForeignKey(
-        "user.Branch", on_delete=models.CASCADE, related_name="vehicles"
+        "user.Branch", on_delete=models.CASCADE, related_name="vehicles", default=0
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
