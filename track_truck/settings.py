@@ -60,6 +60,7 @@ ALLOWED_HOSTS = [
     "localhost:3000",
     "localhost:3000",
     "127.0.0.1",
+    "routematrix.onrender.com",
     "https://routematrix.onrender.com",
     "https://dashboard-routematrix.vercel.app/ ",
 ]

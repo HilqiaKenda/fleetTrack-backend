@@ -274,6 +274,7 @@ class Branch(models.Model):
         "Organization",
         on_delete=models.CASCADE,
         related_name="branches",
+        default=0,
         help_text=_("The organization this branch belongs to."),
     )
     name = models.CharField(max_length=255, unique=True)
