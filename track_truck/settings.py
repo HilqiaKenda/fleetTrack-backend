@@ -163,16 +163,36 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+SESSION_ENGINE = "django.contrib.sessions.backends.cache"
+SESSION_CACHE_ALIAS = "default"
 
+
+"""
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379",
+        # "LOCATION": "redis://127.0.0.1:6379",
         # "OPTIONS": {
         #     "CLIENT_CLASS": "django_redis.client.DefaultClient",
         # },
+        "LOCATION": os.environ.get("REDIS_URL"),
+              "OPTIONS": {
+                  "CLIENT_CLASS": "django_redis.client.DefaultClient",
+              }
     }
 }
+"""
+
+"""
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [os.environ.get("REDIS_URL")],
+        },
+    },
+}
+"""
 
 
 # """
