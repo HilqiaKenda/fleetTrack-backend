@@ -39,6 +39,9 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS("🚧 Starting data seeding..."))
 
+        # create superuser FIRST
+        super_user = self.create_superuser()
+
         organizations = self.create_organizations(num_orgs)
         carriers = self.create_carriers(num_carriers)
         branches = self.create_branches(organizations, num_branches)
@@ -52,6 +55,31 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS("✅ Database seeding completed successfully!")
         )
+
+    # create superuser
+    def create_superuser(self):
+        username = "john.smith"
+        email = "johnsmith@gmail.com"
+        password = "grootpass"
+
+        if not User.objects.filter(username=username).exists():
+            User.objects.create_superuser(
+                username=username, email=email, password=password
+            )
+            self.stdout.write(self.style.SUCCESS(f"Superuser '{username}' created"))
+        else:
+            self.stdout.write(
+                self.style.WARNING(f"Superuser '{username}' already exists")
+            )
+
+    # def create_superuser(self, *args, **kwargs):
+    #     if not User.objects.filter(username="john.smith").exists():
+    #         User.objects.create_superuser(
+    #             "john.smith", "johnsmith@gmail.com", "grootpass"
+    #         )
+    #         self.stdout.write("Superuser created")
+    #     else:
+    #         self.stdout.write("Superuser already exists")
 
     # ---------------------
     # ORGANIZATIONS
