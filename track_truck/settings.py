@@ -11,10 +11,10 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from datetime import timedelta
-from decouple import config
 from pathlib import Path
-from dotenv import load_dotenv
 
+from decouple import config
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -60,13 +60,13 @@ ALLOWED_HOSTS = [
     "localhost:3000",
     "localhost:3000",
     "127.0.0.1",
-    "fleet-track-km.vercel.app",
-    "fleettrack-backend-1.onrender.com",
+    "https://routematrix.onrender.com",
     "https://dashboard-routematrix.vercel.app/ ",
 ]
 
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
+    "https://routematrix.onrender.com",
     "https://dashboard-routematrix.vercel.app/",
 ]
 
@@ -78,10 +78,9 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:3000",
-    "https://fleet-track-km.vercel.app",
-    "https://fleet-track-frontend.vercel.app",
+    "https://routemtarix.vercel.app",
     "https://dashboard-routematrix.vercel.app",
-    "https://fleettrack-backend-1.onrender.com",
+    "https://routematrix.onrender.com",
 ]
 
 
