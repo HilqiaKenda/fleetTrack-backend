@@ -19,7 +19,7 @@ fake = Faker()
 
 
 class Command(BaseCommand):
-    help = "Generate seed data for organizations, carriers, branches, vehicles, drivers, and trips"
+    help = "Seed the database with demo data for organizations, branches, vehicles, drivers, and trips"
 
     def add_arguments(self, parser):
         parser.add_argument("--num_orgs", type=int, default=3)
@@ -37,37 +37,44 @@ class Command(BaseCommand):
         num_vehicles = kwargs["num_vehicles"]
         num_trips = kwargs["num_trips"]
 
-        self.stdout.write(self.style.SUCCESS("Creating organizations..."))
+        self.stdout.write(self.style.SUCCESS("🚧 Starting data seeding..."))
+
+        # create superuser FIRST
+        super_user = self.create_superuser()
+
         organizations = self.create_organizations(num_orgs)
-
-        self.stdout.write(self.style.SUCCESS("Creating carriers..."))
         carriers = self.create_carriers(num_carriers)
-
-        self.stdout.write(self.style.SUCCESS("Creating branches..."))
         branches = self.create_branches(organizations, num_branches)
-
-        self.stdout.write(self.style.SUCCESS("Creating branch managers..."))
         self.create_branch_managers(branches)
-
-        self.stdout.write(self.style.SUCCESS("Creating vehicles..."))
         vehicles = self.create_vehicles(branches, carriers, num_vehicles)
-
-        self.stdout.write(self.style.SUCCESS("Creating drivers..."))
         drivers = self.create_drivers(branches, num_drivers)
-
-        self.stdout.write(self.style.SUCCESS("Creating locations..."))
         locations = self.create_locations(num_trips * 5)
-
-        self.stdout.write(self.style.SUCCESS("Creating trips..."))
-        trips = self.create_trips(drivers, vehicles, num_trips)
-
-        self.stdout.write(self.style.SUCCESS("Creating trip events..."))
+        trips = self.create_trips(drivers, vehicles, locations, num_trips)
         self.create_trip_events(trips, locations)
 
-        self.stdout.write(self.style.SUCCESS("✅ Seeding completed successfully!"))
+        self.stdout.write(
+            self.style.SUCCESS("✅ Database seeding completed successfully!")
+        )
 
-    # --- Helpers ---
+    # create superuser
+    def create_superuser(self):
+        username = "john.smith"
+        email = "johnsmith@gmail.com"
+        password = "grootpass"
 
+        if not User.objects.filter(username=username).exists():
+            User.objects.create_superuser(
+                username=username, email=email, password=password
+            )
+            self.stdout.write(self.style.SUCCESS(f"Superuser '{username}' created"))
+        else:
+            self.stdout.write(
+                self.style.WARNING(f"Superuser '{username}' already exists")
+            )
+
+    # ---------------------
+    # ORGANIZATIONS
+    # ---------------------
     def create_organizations(self, num):
         orgs = []
         for _ in range(num):
@@ -81,12 +88,15 @@ class Command(BaseCommand):
                     address=fake.address(),
                     website=fake.url(),
                     industry=choice(["Transport", "Logistics", "Distribution"]),
-                    description=fake.text(max_nb_chars=100),
+                    description=fake.text(max_nb_chars=120),
                 )
             )
         Organization.objects.bulk_create(orgs, ignore_conflicts=True)
         return list(Organization.objects.all())
 
+    # ---------------------
+    # CARRIERS
+    # ---------------------
     def create_carriers(self, num):
         carriers = []
         for _ in range(num):
@@ -102,6 +112,9 @@ class Command(BaseCommand):
         Carrier.objects.bulk_create(carriers, ignore_conflicts=True)
         return list(Carrier.objects.all())
 
+    # ---------------------
+    # BRANCHES
+    # ---------------------
     def create_branches(self, organizations, num):
         branches = []
         cities = [
@@ -137,6 +150,9 @@ class Command(BaseCommand):
         Branch.objects.bulk_create(branches, ignore_conflicts=True)
         return list(Branch.objects.all())
 
+    # ---------------------
+    # BRANCH MANAGERS
+    # ---------------------
     def create_branch_managers(self, branches):
         for branch in branches:
             user = User.objects.create_user(
@@ -147,6 +163,9 @@ class Command(BaseCommand):
             )
             BranchManager.objects.create(user=user, branch=branch, role="manager")
 
+    # ---------------------
+    # VEHICLES
+    # ---------------------
     def create_vehicles(self, branches, carriers, num):
         vehicles = []
         for _ in range(num):
@@ -166,6 +185,9 @@ class Command(BaseCommand):
         Vehicle.objects.bulk_create(vehicles, ignore_conflicts=True)
         return list(Vehicle.objects.all())
 
+    # ---------------------
+    # DRIVERS
+    # ---------------------
     def create_drivers(self, branches, num):
         drivers = []
         for _ in range(num):
@@ -195,6 +217,9 @@ class Command(BaseCommand):
             drivers.append(driver)
         return drivers
 
+    # ---------------------
+    # LOCATIONS
+    # ---------------------
     def create_locations(self, num):
         locations = []
         ugandan_cities = [
@@ -223,31 +248,43 @@ class Command(BaseCommand):
         Location.objects.bulk_create(locations, ignore_conflicts=True)
         return list(Location.objects.all())
 
-    def create_trips(self, drivers, vehicles, num):
+    # ---------------------
+    # TRIPS
+    # ---------------------
+    def create_trips(self, drivers, vehicles, locations, num):
         trips = []
         statuses = ["active", "assigned", "ongoing", "completed"]
         for _ in range(num):
             driver = choice(drivers)
             co_driver = choice(drivers) if randint(0, 4) == 0 else None
             vehicle = choice(vehicles)
+            origin = choice(locations)
+            destination = choice([loc for loc in locations if loc != origin])
+
             trip_date = timezone.now().date() - timedelta(days=randint(0, 30))
             is_completed = choice([True, False])
-            trips.append(
-                Trip(
-                    date=trip_date,
-                    driver=driver,
-                    co_driver=co_driver,
-                    vehicle=vehicle,
-                    shipper_and_commodity=f"{fake.company()} - {fake.word()}",
-                    cycle_rule=choice(["70hr/8day", "60hr/7day"]),
-                    remarks=fake.text(max_nb_chars=200),
-                    is_completed=is_completed,
-                    status="completed" if is_completed else choice(statuses),
-                )
+
+            trip = Trip(
+                date=trip_date,
+                driver=driver,
+                co_driver=co_driver,
+                vehicle=vehicle,
+                shipper_and_commodity=f"{fake.company()} - {fake.word()}",
+                cycle_rule=choice(["70hr/8day", "60hr/7day"]),
+                remarks=f"Trip from {origin.city} to {destination.city}",
+                is_completed=is_completed,
+                status="completed" if is_completed else choice(statuses),
             )
+            trip._origin = origin
+            trip._destination = destination  # temporary for event seeding
+            trips.append(trip)
+
         Trip.objects.bulk_create(trips)
         return list(Trip.objects.order_by("-created_at")[:num])
 
+    # ---------------------
+    # TRIP EVENTS (with origin/destination)
+    # ---------------------
     def create_trip_events(self, trips, locations):
         events = []
         event_types = [
@@ -259,20 +296,38 @@ class Command(BaseCommand):
             "fuel_stop",
             "meal_break",
             "inspection",
-            "loading",
-            "unloading",
             "other",
         ]
+
         for trip in trips:
-            num_events = randint(5, 15)
+            origin = getattr(trip, "_origin", choice(locations))
+            destination = getattr(trip, "_destination", choice(locations))
+
+            num_events = randint(6, 15)
             timestamp = timezone.make_aware(
                 timezone.datetime.combine(trip.date, timezone.datetime.min.time())
             )
-            for _ in range(num_events):
+
+            # Origin event
+            events.append(
+                TripEvent(
+                    trip=trip,
+                    location=origin,
+                    event_type="loading",
+                    timestamp=timestamp,
+                    duration=round(uniform(0.5, 2.0), 2),
+                    miles_driven=0.0,
+                    notes=f"Trip started at {origin.city}",
+                )
+            )
+            timestamp += timedelta(hours=1)
+
+            # Mid-route events
+            for _ in range(num_events - 2):
                 location = choice(locations)
                 event_type = choice(event_types)
                 duration = round(uniform(0.25, 4.0), 2)
-                miles = round(uniform(0, 250), 2) if event_type == "driving" else 0.0
+                miles = round(uniform(10, 200), 2) if event_type == "driving" else 0.0
                 events.append(
                     TripEvent(
                         trip=trip,
@@ -281,9 +336,27 @@ class Command(BaseCommand):
                         timestamp=timestamp,
                         duration=duration,
                         miles_driven=miles,
-                        notes=fake.text(max_nb_chars=100),
+                        notes=fake.sentence(nb_words=8),
                     )
                 )
                 timestamp += timedelta(hours=duration)
+
+            # Destination event
+            events.append(
+                TripEvent(
+                    trip=trip,
+                    location=destination,
+                    event_type="unloading",
+                    timestamp=timestamp,
+                    duration=round(uniform(0.5, 2.0), 2),
+                    miles_driven=0.0,
+                    notes=f"Trip ended at {destination.city}",
+                )
+            )
+
         TripEvent.objects.bulk_create(events)
-        self.stdout.write(self.style.SUCCESS(f"Created {len(events)} trip events"))
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"📍 Created {len(events)} TripEvents with origin/destination"
+            )
+        )

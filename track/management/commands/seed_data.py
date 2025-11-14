@@ -56,7 +56,9 @@ class Command(BaseCommand):
             self.style.SUCCESS("✅ Database seeding completed successfully!")
         )
 
-    # create superuser
+    # ---------------------
+    # SUPERUSER
+    # ---------------------
     def create_superuser(self):
         username = "john.smith"
         email = "johnsmith@gmail.com"
@@ -71,15 +73,6 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.WARNING(f"Superuser '{username}' already exists")
             )
-
-    # def create_superuser(self, *args, **kwargs):
-    #     if not User.objects.filter(username="john.smith").exists():
-    #         User.objects.create_superuser(
-    #             "john.smith", "johnsmith@gmail.com", "grootpass"
-    #         )
-    #         self.stdout.write("Superuser created")
-    #     else:
-    #         self.stdout.write("Superuser already exists")
 
     # ---------------------
     # ORGANIZATIONS
@@ -284,15 +277,16 @@ class Command(BaseCommand):
                 is_completed=is_completed,
                 status="completed" if is_completed else choice(statuses),
             )
+            trip.save()
+            # Attach temporary origin/destination for events
             trip._origin = origin
-            trip._destination = destination  # temporary for event seeding
+            trip._destination = destination
             trips.append(trip)
 
-        Trip.objects.bulk_create(trips)
-        return list(Trip.objects.order_by("-created_at")[:num])
+        return trips
 
     # ---------------------
-    # TRIP EVENTS (with origin/destination)
+    # TRIP EVENTS
     # ---------------------
     def create_trip_events(self, trips, locations):
         events = []
@@ -322,7 +316,7 @@ class Command(BaseCommand):
                 TripEvent(
                     trip=trip,
                     location=origin,
-                    event_type="loading",
+                    event_type="driving_start",  # <- ensures origin_location works
                     timestamp=timestamp,
                     duration=round(uniform(0.5, 2.0), 2),
                     miles_driven=0.0,
@@ -355,7 +349,7 @@ class Command(BaseCommand):
                 TripEvent(
                     trip=trip,
                     location=destination,
-                    event_type="unloading",
+                    event_type="driving_end",  # <- ensures destination_location works
                     timestamp=timestamp,
                     duration=round(uniform(0.5, 2.0), 2),
                     miles_driven=0.0,
