@@ -28,12 +28,14 @@ from user.serializers import CarrierSerializer, DriverSerializer
 from user.utilities.auth import CookieJWTAuthentication
 
 # from utilities.permissions import
+# from utilities.permissions import
 from user.utilities.permissions import (
     MANAGER_ROLES,
     ROLE_ADMIN,
     ROLE_BRANCH_MANAGER,
     ROLE_DRIVER,
     ROLE_FLEET_MANAGER,
+    ROLE_ORGANIZATION,
     DriverMixin,
     RolePermission,
     ScopedQuerysetMixin,
@@ -55,40 +57,6 @@ from .serializers import (
     UserProfileSerializer,
     UserSerializer,
 )
-
-
-from .models import Branch, BranchManager, BranchAssignment
-from .serializers import (
-    BranchSerializer,
-    BranchListSerializer,
-    BranchDetailSerializer,
-    BranchManagerSerializer,
-    CreateBranchManagerSerializer,
-    BranchAssignmentSerializer,
-    BranchStatisticsSerializer,
-)
-
-# from utilities.permissions import
-from user.utilities.permissions import (
-    RolePermission,
-    ScopedQuerysetMixin,
-    DriverMixin,
-    ROLE_ADMIN,
-    ROLE_ORGANIZATION,
-    ROLE_ORGANIZATION,
-    ROLE_DRIVER,
-    ROLE_FLEET_MANAGER,
-    ROLE_BRANCH_MANAGER,
-    MANAGER_ROLES,
-)
-
-
-from datetime import timedelta
-from dateutil.relativedelta import relativedelta
-
-import re
-import logging
-
 
 logger = logging.getLogger(__name__)
 

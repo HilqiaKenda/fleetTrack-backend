@@ -1,60 +1,51 @@
-from dateutil.relativedelta import relativedelta
-from rest_framework.mixins import (
-    CreateModelMixin,
-    RetrieveModelMixin,
-    UpdateModelMixin,
-    ListModelMixin,
-)
-from rest_framework.viewsets import GenericViewSet
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.decorators import action
-from django.views.decorators.csrf import csrf_exempt
-from django.db.models.functions import Coalesce
-from django.core.cache import cache
-from django.db.models import Sum, Avg, Count, Q, Value
-from rest_framework.permissions import IsAuthenticated, IsAdminUser
-from django.utils import timezone
+import logging
+import math
+import re
 from datetime import datetime, timedelta
 
-from user.utilities.permissions import (
-    RolePermission,
-    ROLE_ADMIN,
-    ROLE_FLEET_MANAGER,
-    ROLE_MAINTENANCE,
-    ROLE_DRIVER,
-    ROLE_BRANCH_MANAGER,
+from dateutil.relativedelta import relativedelta
+from django.core.cache import cache
+from django.db.models import Avg, Count, Q, Sum, Value
+from django.db.models.functions import Coalesce
+from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
+from rest_framework import status
+from rest_framework.decorators import action
+from rest_framework.generics import GenericAPIView
+from rest_framework.mixins import (
+    CreateModelMixin,
+    ListModelMixin,
+    RetrieveModelMixin,
+    UpdateModelMixin,
 )
-
-from user.utilities.permissions import (
-    RolePermission,
-    ROLE_ADMIN,
-    ROLE_FLEET_MANAGER,
-    ROLE_MAINTENANCE,
-    ROLE_DRIVER,
-    ROLE_BRANCH_MANAGER,
-)
-
+from rest_framework.permissions import IsAdminUser, IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.viewsets import GenericViewSet
 from user.models import Driver
+from user.utilities.permissions import (
+    ROLE_ADMIN,
+    ROLE_BRANCH_MANAGER,
+    ROLE_DRIVER,
+    ROLE_FLEET_MANAGER,
+    ROLE_MAINTENANCE,
+    RolePermission,
+)
+
 from .models import (
-    Location,
     Carrier,
-    Vehicle,
+    Location,
     Trip,
     TripEvent,
+    Vehicle,
 )
 from .serializers import (
     LocationSerializer,
-    VehicleSerializer,
-    TripSerializer,
     TripCreateSerializer,
-    TripEventSerializer,
     TripEventCreateSerializer,
+    TripEventSerializer,
+    TripSerializer,
+    VehicleSerializer,
 )
-import re
-import math
-import logging
-
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +141,6 @@ class TripViewSet(
     RetrieveModelMixin,
     GenericViewSet,
 ):
-
     # permission_classes = [
     #     IsAuthenticated,
     #     RolePermission.for_roles(
@@ -467,3 +457,16 @@ class SearchViewSet(GenericViewSet):
                 },
                 status=500,
             )
+
+
+"""
+fetch("/api/v1.1/trips/statistics/?from=2025-01-01&to=2025-01-31", { ... })
+
+class TripStatisticsView(GenericAPIView):
+    def get(self, request):
+        date_from = request.query_params.get("from")
+        date_to = request.query_params.get("to")
+        if not date_from or not date_to:
+            return Response({"error": "Missing parameters"}, status=400)
+
+"""
