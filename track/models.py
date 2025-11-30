@@ -2,6 +2,23 @@ from django.utils import timezone
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 
+from user.models import Carrier, Driver
+
+
+# models.py additions
+
+
+class UserActivityLog(models.Model):
+    """Track user actions for audit"""
+
+    # user = models.ForeignKey("auth.User", on_delete=models.CASCADE)
+    action = models.CharField(max_length=100)
+    resource_type = models.CharField(max_length=50)
+    resource_id = models.IntegerField(null=True)
+    ip_address = models.GenericIPAddressField()
+    device_info = models.CharField(max_length=255)
+    timestamp = models.DateTimeField(auto_now_add=True)
+
 
 class Location(models.Model):
     """Normalized location model - one record per unique location"""
@@ -35,39 +52,10 @@ class Location(models.Model):
         return self.address
 
 
-class Driver(models.Model):
-    """Driver information"""
-
-    driver_initial = models.CharField(max_length=10, unique=True)
-    full_name = models.CharField(max_length=255)
-    license_number = models.CharField(max_length=50, unique=True)
-    phone_number = models.CharField(max_length=20, blank=True)
-    email = models.EmailField(blank=True)
-
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return f"{self.driver_initial} - {self.full_name}"
-
-
-class Carrier(models.Model):
-    """Carrier/Company information"""
-
-    name = models.CharField(max_length=255, unique=True)
-    dot_number = models.CharField(max_length=20, unique=True, blank=True)
-    mc_number = models.CharField(max_length=20, blank=True)
-    address = models.TextField(blank=True)
-    phone = models.CharField(max_length=20, blank=True)
-
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return self.name
-
-
 class Vehicle(models.Model):
     """Vehicle/Truck information"""
+
+    STATUS_CHOICES = []
 
     truck_number = models.CharField(max_length=50, unique=True)
     make = models.CharField(max_length=50, blank=True)
@@ -75,8 +63,13 @@ class Vehicle(models.Model):
     year = models.PositiveIntegerField(blank=True, null=True)
     vin = models.CharField(max_length=17, unique=True, blank=True)
     license_plate = models.CharField(max_length=20, blank=True)
+    is_active = models.BooleanField(default=True)
+    status = models.CharField(max_length=25, choices=STATUS_CHOICES, default="active")
     carrier = models.ForeignKey(
         Carrier, on_delete=models.CASCADE, related_name="vehicles"
+    )
+    branch = models.ForeignKey(
+        "user.Branch", on_delete=models.CASCADE, related_name="vehicles", default=0
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -89,6 +82,12 @@ class Trip(models.Model):
     """Main trip record"""
 
     CYCLE_RULE_CHOICES = [("70hr/8day", "70hr/8day"), ("60hr/7day", "60hr/7day")]
+    STATUS_CHOICES = [
+        ("active", "active"),
+        ("assigned", "assigned"),
+        ("ongoing", "ongoing"),
+        ("completed", "completed"),
+    ]
 
     date = models.DateField()
 
@@ -118,6 +117,7 @@ class Trip(models.Model):
     # Additional information
     remarks = models.TextField(blank=True)
     is_completed = models.BooleanField(default=False)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="active")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -230,3 +230,47 @@ class TripEvent(models.Model):
 
     def __str__(self):
         return f"{self.trip.id} - {self.get_event_type_display()} at {self.location.address}"
+
+
+class DashboardCache(models.Model):
+    """Cache frequently accessed dashboard data"""
+
+    cache_key = models.CharField(max_length=255, unique=True)
+    cache_data = models.JSONField()
+    user_role = models.CharField(max_length=50)
+    expires_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["cache_key", "user_role"]),
+            models.Index(fields=["expires_at"]),
+        ]
+
+
+class AlertLog(models.Model):
+    """Track all system alerts"""
+
+    SEVERITY_CHOICES = [
+        ("critical", "Critical"),
+        ("high", "High"),
+        ("medium", "Medium"),
+        ("low", "Low"),
+    ]
+
+    vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE)
+    alert_type = models.CharField(max_length=50)
+    severity = models.CharField(max_length=20, choices=SEVERITY_CHOICES)
+    message = models.TextField()
+    location_lat = models.FloatField(null=True)
+    location_lng = models.FloatField(null=True)
+    location_address = models.CharField(max_length=255, blank=True)
+    is_resolved = models.BooleanField(default=False)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolved_by = models.ForeignKey(
+        "user.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="resolved_alerts",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)

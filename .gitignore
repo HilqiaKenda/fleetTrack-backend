@@ -81,8 +81,12 @@ target/
 # IPython
 profile_default/
 ipython_config.py
-# migrations
-# migrations/
+
+# Ignore all migrations
+migrations/
+**/migrations/*
+!**/migrations/__init__.py
+
 # pyenv
 #   For a library or package, you might want to ignore these files since the code is
 #   intended to run in multiple environments; otherwise, check them in:
@@ -137,9 +141,11 @@ celerybeat.pid
 
 # Environments
 .env
+.env.production
 .envrc
 .venv
 env/
+env.production/
 venv/
 ENV/
 env.bak/
@@ -163,6 +169,7 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# migrations
 # pytype static type analyzer
 .pytype/
 
@@ -183,9 +190,9 @@ cython_debug/
 .abstra/
 
 # Visual Studio Code
-#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
+#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore
 #  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#  and can be added to the global gitignore or merged into this file. However, if you prefer, 
+#  and can be added to the global gitignore or merged into this file. However, if you prefer,
 #  you could uncomment the following to ignore the entire vscode folder
 # .vscode/
 
