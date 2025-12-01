@@ -391,6 +391,7 @@ class AdminDashboardViewSet(GenericViewSet):
                 vehicle_filter &= Q(is_active=True)
 
             overview_data = self._get_overview_data(vehicle_filter, trip_filter)
+            trip_summary = self._get_trip_summary(trip_filter)
             vehicle_distribution = self._get_vehicle_distribution(vehicle_filter)
             operations_metrics = self._get_operations_metrics(trip_filter)
             alerts_summary = self._get_alerts_summary(period_filter)
@@ -399,6 +400,7 @@ class AdminDashboardViewSet(GenericViewSet):
             system_health = self._get_system_health()
             dashboard_data = {
                 "overview": overview_data,
+                "trips_summary": trip_summary,
                 "vehicle_distribution": vehicle_distribution,
                 "operations_metrics": operations_metrics,
                 "alerts_summary": alerts_summary,
@@ -503,6 +505,8 @@ class AdminDashboardViewSet(GenericViewSet):
 
         return {
             "total_vehicles": vehicles.count(),
+            "total_trips": Trip.objects.count(),
+            "trips_summary": Trip.objects.count(),
             "active_vehicles": vehicles.filter(is_active=True).count(),
             "inactive_vehicles": vehicles.filter(is_active=False).count(),
             "total_drivers": Driver.objects.count(),
@@ -510,6 +514,27 @@ class AdminDashboardViewSet(GenericViewSet):
             "total_trips_period": trips.count(),
             "completed_trips": trips.filter(is_completed=True).count(),
             "in_progress_trips": trips.filter(is_completed=False).count(),
+        }
+
+    def _get_trip_summary(self, trip_filter):
+        """Return count of trips by status + total trips"""
+        trips = Trip.objects.filter(trip_filter)
+
+        # Group by status
+        status_counts = trips.values("status").annotate(count=Count("id")).order_by()
+
+        # Convert list → dictionary for easy frontend use
+        status_dict = {item["status"]: item["count"] for item in status_counts}
+
+        return {
+            "total_trips": trips.count(),
+            "status_breakdown": {
+                "active": status_dict.get("active", 0),
+                "assigned": status_dict.get("assigned", 0),
+                "schedule": status_dict.get("schedule", 0),
+                "completed": status_dict.get("completed", 0),
+                "cancelled": status_dict.get("cancelled", 0),
+            },
         }
 
     def _get_vehicle_distribution(self, vehicle_filter):
