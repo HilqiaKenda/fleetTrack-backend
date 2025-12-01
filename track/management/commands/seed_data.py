@@ -22,7 +22,7 @@ class Command(BaseCommand):
     help = "Seed the database with demo data for organizations, branches, vehicles, drivers, and trips"
 
     # --- MAIN CONFIGURATION ---
-    NUM_TRIPS = 500
+    NUM_TRIPS = 900
     NUM_DRIVERS = NUM_TRIPS // 2
     NUM_VEHICLES = NUM_TRIPS // 3
     NUM_BRANCHES = NUM_TRIPS // 5
