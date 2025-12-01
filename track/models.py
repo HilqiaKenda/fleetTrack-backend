@@ -1,11 +1,7 @@
 from django.utils import timezone
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
-
 from user.models import Carrier, Driver
-
-
-# models.py additions
 
 
 class UserActivityLog(models.Model):
@@ -85,8 +81,9 @@ class Trip(models.Model):
     STATUS_CHOICES = [
         ("active", "active"),
         ("assigned", "assigned"),
-        ("ongoing", "ongoing"),
+        ("schedule", "schedule"),
         ("completed", "completed"),
+        ("cancelled", "cancelled"),
     ]
 
     date = models.DateField()
@@ -117,7 +114,7 @@ class Trip(models.Model):
     # Additional information
     remarks = models.TextField(blank=True)
     is_completed = models.BooleanField(default=False)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="active")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="schedule")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -191,7 +188,6 @@ class TripEvent(models.Model):
         ("inspection", "Vehicle Inspection"),
         ("loading", "Loading"),
         ("unloading", "Unloading"),
-        ("other", "Other"),
     ]
 
     trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name="events")

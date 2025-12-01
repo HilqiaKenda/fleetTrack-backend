@@ -130,8 +130,6 @@ DB_HOST = os.getenv("DB_HOST")
 DB_PORT = os.getenv("DB_PORT")
 """
 
-# psql = "postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}/${DB_NAME}?sslmode=require&channel_binding=require"
-
 DATABASES = {
     "default": {
         "ENGINE": DB_ENGINE,
@@ -146,13 +144,6 @@ DATABASES = {
         },
     }
 }
-
-# DATABASES = {
-#     "default": {
-#         "ENGINE": "django.db.backends.sqlite3",
-#         "NAME": BASE_DIR / "db.sqlite3",
-#     }
-# }
 
 
 # Password validation
@@ -259,7 +250,7 @@ REST_FRAMEWORK = {
         "anon": "800/minute",
     },
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
-    "PAGE_SIZE": 50,
+    "PAGE_SIZE": 500,
 }
 
 
