@@ -141,6 +141,7 @@ class TripSerializer(serializers.ModelSerializer):
             "remarks",
             "is_completed",
             "events",
+            "status",
             "events_count",
             "origin_location",
             "destination_location",

@@ -5,7 +5,6 @@ from django.contrib.auth.models import (
     AbstractBaseUser,
     BaseUserManager,
     PermissionsMixin,
-    AbstractUser,
 )
 
 from django.utils.translation import gettext_lazy as _
@@ -61,14 +60,15 @@ class User(AbstractBaseUser, PermissionsMixin):
         ("maintenancer", "Maintenancer"),
         ("driver", "Driver"),
     ]
-
-    id = models.AutoField(primary_key=True)
+    first_name = models.CharField(max_length=50, null=False, blank=False)
+    last_name = models.CharField(max_length=50, null=False, blank=False)
     username = models.CharField(max_length=255, unique=True)
     email = models.EmailField(unique=True)
+    telephone = models.CharField(max_length=20, blank=True, null=True)
     role = models.CharField(
         max_length=50,
         choices=ROLE_CHOICES,
-        default="maintenancer",
+        default="driver",
         help_text=_("The role of the user in the system."),
     )
     is_active = models.BooleanField(default=True)
@@ -95,10 +95,9 @@ class User(AbstractBaseUser, PermissionsMixin):
     def __str__(self):
         return f"{self.username} ({self.role})"
 
-    # --- Custom methods ---
     def get_branches(self):
         """Return branches this user manages or is assigned to."""
-        from .models import Branch  # Local import to avoid circular import issues
+        from .models import Branch
 
         if self.role in ["fleet-manager", "Maintenancer", "branch-manager"]:
             return Branch.objects.filter(branch_managers__user=self)

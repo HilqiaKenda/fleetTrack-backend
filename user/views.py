@@ -329,6 +329,7 @@ class AdminDashboardViewSet(GenericViewSet):
         IsAdminUser,
         RolePermission.for_roles([ROLE_ADMIN]),
     ]
+    pagination_class = None
 
     def get_serializer_class(self):
         return EmptySerializer
@@ -360,8 +361,8 @@ class AdminDashboardViewSet(GenericViewSet):
 
             # Check cache
             cache_key = f"admin_dashboard_{period}_{branch_ids}_{include_inactive}"
-            # print(request.user.role)
             cached_data = cache.get(cache_key)
+
             if cached_data:
                 return Response(
                     {
@@ -513,7 +514,11 @@ class AdminDashboardViewSet(GenericViewSet):
 
     def _get_vehicle_distribution(self, vehicle_filter):
         """Return vehicle count grouped by carrier"""
-        vehicles = Vehicle.objects.filter(vehicle_filter)
+        vehicles = (
+            Vehicle.objects.prefetch_related("carrier", "branch")
+            .select_related("carrier", "branch")
+            .filter(vehicle_filter)
+        )
         return list(
             vehicles.values("carrier__name")
             .annotate(vehicle_count=Count("id"))
@@ -522,7 +527,11 @@ class AdminDashboardViewSet(GenericViewSet):
 
     def _get_operations_metrics(self, trip_filter):
         """Return total miles, avg miles, total hours driven"""
-        trips = Trip.objects.filter(trip_filter)
+        trips = (
+            Trip.objects.prefetch_related("driver", "co_driver", "vehicle")
+            .select_related("driver", "co_driver", "vehicle")
+            .filter(trip_filter)
+        )
 
         total_miles = trips.aggregate(total=Count("total_miles_driving"))["total"] or 0
         avg_miles = trips.aggregate(avg=Count("total_mileage_today"))["avg"] or 0
@@ -602,6 +611,7 @@ class DriverDashboardViewSet(GenericViewSet):
         IsAuthenticated,
         RolePermission.for_roles([ROLE_ADMIN, ROLE_DRIVER]),
     ]
+    pagination_class = None
 
     @action(detail=False, methods=["get"], url_path="summary")
     def driver_summary(self, request):
@@ -614,7 +624,11 @@ class DriverDashboardViewSet(GenericViewSet):
             )
 
         try:
-            driver = Driver.objects.get(id=driver_id)
+            driver = (
+                Driver.objects.prefetch_related("user", "branch")
+                .select_related("user", "branch")
+                .get(id=driver_id)
+            )
         except Driver.DoesNotExist:
             return Response(
                 {"status": False, "message": "Driver not found"},
@@ -622,13 +636,31 @@ class DriverDashboardViewSet(GenericViewSet):
             )
 
         # Get all trips by this driver
-        all_trips = Trip.objects.filter(driver_id=driver.id)
-        trips_count = Trip.objects.filter(driver_id=driver.id).count()
+        all_trips = (
+            Trip.objects.prefetch_related("driver", "co_driver", "vehicle")
+            .select_related("driver", "co_driver", "vehicle")
+            .filter(driver_id=driver.id)
+        )
+        trips_count = (
+            Trip.objects.prefetch_related("driver", "co_driver", "vehicle")
+            .select_related("driver", "co_driver", "vehicle")
+            .filter(driver_id=driver.id)
+            .count()
+        )
 
         # Get all vehicles used
         vehicle_ids = all_trips.values_list("vehicle_id", flat=True).distinct()
-        used_vehicles = Vehicle.objects.filter(id__in=vehicle_ids)
-        all_vehicles = Vehicle.objects.filter(id__in=vehicle_ids).count()
+        used_vehicles = (
+            Vehicle.objects.prefetch_related("carrier", "branch")
+            .select_related("carrier", "branch")
+            .filter(id__in=vehicle_ids)
+        )
+        all_vehicles = (
+            Vehicle.objects.prefetch_related("branch", "carrier")
+            .select_related("carrier", "branch")
+            .filter(id__in=vehicle_ids)
+            .count()
+        )
 
         # Get current assigned trip
         current_trip = all_trips.filter(
@@ -676,7 +708,11 @@ class DriverViewSet(
     UpdateModelMixin,
     GenericViewSet,
 ):
-    queryset = Driver.objects.all()
+    queryset = (
+        Driver.objects.prefetch_related("user", "branch")
+        .select_related("user", "branch")
+        .all()
+    )
     serializer_class = DriverSerializer
     # permission_classes = [IsAuthenticated, RolePermission([ROLE_DRIVER, ROLE_ADMIN])]
 
@@ -684,7 +720,12 @@ class DriverViewSet(
     def trips(self, request, pk=None):
         """Get trips for a specific driver"""
         driver = self.get_object()
-        trips = Trip.objects.filter(driver=driver).order_by("-date")
+        trips = (
+            Trip.objects.prefetch_related("driver", "co_driver")
+            .select_related("driver", "co_driver")
+            .filter(driver=driver)
+            .order_by("-date")
+        )
         serializer = TripSerializer(trips, many=True)
         return Response(serializer.data)
 
@@ -695,7 +736,11 @@ class DriverViewSet(
         date_from = request.query_params.get("date_from")
         date_to = request.query_params.get("date_to")
 
-        trips = Trip.objects.filter(driver=driver)
+        trips = (
+            Trip.objects.prefetch_related("driver", "co_driver")
+            .select_related("driver", "co_driver")
+            .filter(driver=driver)
+        )
         if date_from:
             trips = trips.filter(date__gte=date_from)
         if date_to:
@@ -735,7 +780,11 @@ class BranchViewSet(
     Branch management
     """
 
-    queryset = Branch.objects.all().prefetch_related("branch_managers")
+    queryset = (
+        Branch.objects.all()
+        .prefetch_related("branch_managers")
+        .select_related("branch_managers")
+    )
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["name", "code", "city", "region", "status"]
     ordering_fields = ["name", "city", "region", "status", "created_at"]
@@ -792,7 +841,9 @@ class BranchManagerViewSet(
     Branch Manager management.
     """
 
-    queryset = BranchManager.objects.select_related("branch", "user")
+    queryset = BranchManager.objects.prefetch_related("branch", "user").select_related(
+        "branch", "user"
+    )
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["user__username", "branch__name", "role"]
     ordering_fields = ["assigned_date", "is_primary", "is_active"]
@@ -829,7 +880,9 @@ class BranchAssignmentViewSet(
     Branch Assignments (staff/driver assignments).
     """
 
-    queryset = BranchAssignment.objects.select_related("branch", "user")
+    queryset = BranchAssignment.objects.prefetch_related(
+        "branch", "user"
+    ).select_related("branch", "user")
     serializer_class = BranchAssignmentSerializer
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["user__username", "branch__name", "assignment_type"]
@@ -859,7 +912,11 @@ class BranchStatisticsViewSet(GenericViewSet, ListModelMixin):
 
     def list(self, request, *args, **kwargs):
         """Return aggregated statistics for all branches."""
-        branches = Branch.objects.all()
+        branches = (
+            Branch.objects.select_related("organization")
+            .select_related("organization")
+            .all()
+        )
         data = []
 
         for branch in branches:
