@@ -107,8 +107,6 @@ class TripSerializer(serializers.ModelSerializer):
     carrier_name = serializers.CharField(source="vehicle.carrier.name", read_only=True)
 
     cycle_hours_used = serializers.ReadOnlyField()
-    origin_location = LocationSerializer(read_only=True)
-    destination_location = LocationSerializer(read_only=True)
 
     events = TripEventSerializer(many=True, read_only=True)
     events_count = serializers.SerializerMethodField()
@@ -143,55 +141,53 @@ class TripSerializer(serializers.ModelSerializer):
             "events",
             "status",
             "events_count",
-            "origin_location",
-            "destination_location",
             "current_location",
             "pickup_location",
             "dropoff_location",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = [
-            "total_miles_driving",
-            "total_driving_hours",
-            "total_on_duty_hours",
-            "total_off_duty_hours",
-            "total_sleeper_hours",
-            "cycle_hours_used",
-        ]
+
+    def _sorted_events(self, obj):
+        """Use already-prefetched events (NO DB HITS)."""
+        if (
+            hasattr(obj, "_prefetched_objects_cache")
+            and "events" in obj._prefetched_objects_cache
+        ):
+            return obj._prefetched_objects_cache["events"]
+        return obj.events.all()  # fallback
 
     def get_events_count(self, obj):
-        return obj.events.count()
+        return len(self._sorted_events(obj))
 
     def get_current_location(self, obj):
-        """For backward compatibility - return the most recent location"""
-        latest_event = obj.events.order_by("-timestamp").first()
-        if latest_event:
-            return {
-                "address": latest_event.location.address,
-                "lat": latest_event.location.latitude,
-                "lng": latest_event.location.longitude,
-            }
+        events = self._sorted_events(obj)
+        if not events:
+            return None
+        last = events[-1]
+        if last.location:
+            loc = last.location
+            return {"address": loc.address, "lat": loc.latitude, "lng": loc.longitude}
         return None
 
     def get_pickup_location(self, obj):
-        """For backward compatibility - return origin location"""
-        if obj.origin_location:
-            return {
-                "address": obj.origin_location.address,
-                "lat": obj.origin_location.latitude,
-                "lng": obj.origin_location.longitude,
-            }
+        events = self._sorted_events(obj)
+        if not events:
+            return None
+        first = events[0]
+        if first.location:
+            loc = first.location
+            return {"address": loc.address, "lat": loc.latitude, "lng": loc.longitude}
         return None
 
     def get_dropoff_location(self, obj):
-        """For backward compatibility - return destination location"""
-        if obj.destination_location:
-            return {
-                "address": obj.destination_location.address,
-                "lat": obj.destination_location.latitude,
-                "lng": obj.destination_location.longitude,
-            }
+        events = self._sorted_events(obj)
+        if not events:
+            return None
+        last = events[-1]
+        if last.location:
+            loc = last.location
+            return {"address": loc.address, "lat": loc.latitude, "lng": loc.longitude}
         return None
 
 
