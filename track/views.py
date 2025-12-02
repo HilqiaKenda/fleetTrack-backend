@@ -131,11 +131,15 @@ class TripViewSet(
         ),
     ]
 
-    event_qs = TripEvent.objects.select_related("location").order_by("timestamp")
+    # event_qs = TripEvent.objects.select_related("location").order_by("timestamp")
+
+    # queryset = Trip.objects.select_related(
+    #     "driver", "co_driver", "vehicle", "vehicle__carrier"
+    # ).prefetch_related(Prefetch("events", queryset=event_qs))
 
     queryset = Trip.objects.select_related(
-        "driver", "co_driver", "vehicle", "vehicle__carrier"
-    ).prefetch_related(Prefetch("events", queryset=event_qs))
+        "driver", "co_driver", "vehicle__carrier", "vehicle"
+    ).all()
 
     def get_serializer_class(self):
         if self.action == "create":
