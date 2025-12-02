@@ -256,7 +256,7 @@ REST_FRAMEWORK = {
         "anon": "800/minute",
     },
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
-    "PAGE_SIZE": 500,
+    "PAGE_SIZE": 200,
 }
 
 
