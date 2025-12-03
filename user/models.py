@@ -558,33 +558,3 @@ class DashboardCache(models.Model):
 
     def __str__(self):
         return f"{self.cache_key} - {self.user_role}"
-
-
-# class AlertLog(models.Model):
-#     """Track all system alerts"""
-
-#     from track.models import Vehicle
-
-#     SEVERITY_CHOICES = [
-#         ("critical", "Critical"),
-#         ("high", "High"),
-#         ("medium", "Medium"),
-#         ("low", "Low"),
-#     ]
-
-#     vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE)
-#     alert_type = models.CharField(max_length=50)
-#     severity = models.CharField(max_length=20, choices=SEVERITY_CHOICES)
-#     message = models.TextField()
-#     location_lat = models.FloatField(null=True)
-#     location_lng = models.FloatField(null=True)
-#     location_address = models.CharField(max_length=255, blank=True)
-#     is_resolved = models.BooleanField(default=False)
-#     resolved_at = models.DateTimeField(null=True, blank=True)
-#     # resolved_by = models.ForeignKey(
-#     #     "user.User",
-#     #     on_delete=models.SET_NULL,
-#     #     null=True,
-#     #     related_name="resolved_alerts",
-#     # )
-#     created_at = models.DateTimeField(auto_now_add=True)
