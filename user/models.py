@@ -5,7 +5,6 @@ from django.contrib.auth.models import (
     AbstractBaseUser,
     BaseUserManager,
     PermissionsMixin,
-    AbstractUser,
 )
 
 from django.utils.translation import gettext_lazy as _
@@ -61,14 +60,15 @@ class User(AbstractBaseUser, PermissionsMixin):
         ("maintenancer", "Maintenancer"),
         ("driver", "Driver"),
     ]
-
-    id = models.AutoField(primary_key=True)
+    first_name = models.CharField(max_length=50, null=False, blank=False)
+    last_name = models.CharField(max_length=50, null=False, blank=False)
     username = models.CharField(max_length=255, unique=True)
     email = models.EmailField(unique=True)
+    telephone = models.CharField(max_length=20, blank=True, null=True)
     role = models.CharField(
         max_length=50,
         choices=ROLE_CHOICES,
-        default="maintenancer",
+        default="driver",
         help_text=_("The role of the user in the system."),
     )
     is_active = models.BooleanField(default=True)
@@ -95,10 +95,9 @@ class User(AbstractBaseUser, PermissionsMixin):
     def __str__(self):
         return f"{self.username} ({self.role})"
 
-    # --- Custom methods ---
     def get_branches(self):
         """Return branches this user manages or is assigned to."""
-        from .models import Branch  # Local import to avoid circular import issues
+        from .models import Branch
 
         if self.role in ["fleet-manager", "Maintenancer", "branch-manager"]:
             return Branch.objects.filter(branch_managers__user=self)
@@ -559,33 +558,3 @@ class DashboardCache(models.Model):
 
     def __str__(self):
         return f"{self.cache_key} - {self.user_role}"
-
-
-# class AlertLog(models.Model):
-#     """Track all system alerts"""
-
-#     from track.models import Vehicle
-
-#     SEVERITY_CHOICES = [
-#         ("critical", "Critical"),
-#         ("high", "High"),
-#         ("medium", "Medium"),
-#         ("low", "Low"),
-#     ]
-
-#     vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE)
-#     alert_type = models.CharField(max_length=50)
-#     severity = models.CharField(max_length=20, choices=SEVERITY_CHOICES)
-#     message = models.TextField()
-#     location_lat = models.FloatField(null=True)
-#     location_lng = models.FloatField(null=True)
-#     location_address = models.CharField(max_length=255, blank=True)
-#     is_resolved = models.BooleanField(default=False)
-#     resolved_at = models.DateTimeField(null=True, blank=True)
-#     # resolved_by = models.ForeignKey(
-#     #     "user.User",
-#     #     on_delete=models.SET_NULL,
-#     #     null=True,
-#     #     related_name="resolved_alerts",
-#     # )
-#     created_at = models.DateTimeField(auto_now_add=True)

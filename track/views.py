@@ -30,7 +30,7 @@ from user.utilities.permissions import (
     ROLE_MAINTENANCE,
     RolePermission,
 )
-
+from django.db.models import Prefetch
 from .models import (
     Carrier,
     Location,
@@ -58,26 +58,17 @@ class LocationViewSet(
 ):
     queryset = Location.objects.all()
     serializer_class = LocationSerializer
-    # permission_classes = [
-    #     IsAuthenticated,
-    #     RolePermission.for_roles(
-    #         [
-    #             ROLE_ADMIN,
-    #             ROLE_FLEET_MANAGER,
-    #             ROLE_BRANCH_MANAGER,
-    #         ]
-    #     ),
-    # ]
-    # permission_classes = [
-    #     IsAuthenticated,
-    #     RolePermission.for_roles(
-    #         [
-    #             ROLE_ADMIN,
-    #             ROLE_FLEET_MANAGER,
-    #             ROLE_BRANCH_MANAGER,
-    #         ]
-    #     ),
-    # ]
+
+    permission_classes = [
+        IsAuthenticated,
+        RolePermission.for_roles(
+            [
+                ROLE_ADMIN,
+                ROLE_FLEET_MANAGER,
+                ROLE_BRANCH_MANAGER,
+            ]
+        ),
+    ]
 
     @action(detail=False, methods=["get"])
     def search(self, request):
@@ -98,31 +89,19 @@ class VehicleViewSet(
     UpdateModelMixin,
     GenericViewSet,
 ):
-    # permission_classes = [
-    #     IsAuthenticated,
-    #     RolePermission.for_roles(
-    #         [
-    #             ROLE_ADMIN,
-    #             ROLE_FLEET_MANAGER,
-    #             ROLE_MAINTENANCE,
-    #             ROLE_DRIVER,
-    #             ROLE_BRANCH_MANAGER,
-    #         ]
-    #     ),
-    # ]
-    # permission_classes = [
-    #     IsAuthenticated,
-    #     RolePermission.for_roles(
-    #         [
-    #             ROLE_ADMIN,
-    #             ROLE_FLEET_MANAGER,
-    #             ROLE_MAINTENANCE,
-    #             ROLE_DRIVER,
-    #             ROLE_BRANCH_MANAGER,
-    #         ]
-    #     ),
-    # ]
-    queryset = Vehicle.objects.select_related("carrier")
+    permission_classes = [
+        IsAuthenticated,
+        RolePermission.for_roles(
+            [
+                ROLE_ADMIN,
+                ROLE_FLEET_MANAGER,
+                ROLE_MAINTENANCE,
+                ROLE_DRIVER,
+                ROLE_BRANCH_MANAGER,
+            ]
+        ),
+    ]
+    queryset = Vehicle.objects.select_related("carrier", "branch")
     serializer_class = VehicleSerializer
 
     @action(detail=True, methods=["get"])
@@ -141,29 +120,22 @@ class TripViewSet(
     RetrieveModelMixin,
     GenericViewSet,
 ):
-    # permission_classes = [
-    #     IsAuthenticated,
-    #     RolePermission.for_roles(
-    #         [
-    #             ROLE_ADMIN,
-    #             ROLE_FLEET_MANAGER,
-    #             ROLE_BRANCH_MANAGER,
-    #         ]
-    #     ),
-    # ]
-    # permission_classes = [
-    #     IsAuthenticated,
-    #     RolePermission.for_roles(
-    #         [
-    #             ROLE_ADMIN,
-    #             ROLE_FLEET_MANAGER,
-    #             ROLE_BRANCH_MANAGER,
-    #         ]
-    #     ),
-    # ]
+    permission_classes = [
+        IsAuthenticated,
+        RolePermission.for_roles(
+            [
+                ROLE_ADMIN,
+                ROLE_FLEET_MANAGER,
+                ROLE_BRANCH_MANAGER,
+            ]
+        ),
+    ]
+
+    event_qs = TripEvent.objects.select_related("location").order_by("timestamp")
+
     queryset = Trip.objects.select_related(
-        "driver", "co_driver", "vehicle__carrier"
-    ).prefetch_related("events__location")
+        "driver", "co_driver", "vehicle", "vehicle__carrier"
+    ).prefetch_related(Prefetch("events", queryset=event_qs))
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -296,29 +268,25 @@ class TripEventViewSet(
     UpdateModelMixin,
     GenericViewSet,
 ):
-    # permission_classes = [
-    #     IsAuthenticated,
-    #     RolePermission.for_roles(
-    #         [
-    #             ROLE_ADMIN,
-    #             ROLE_FLEET_MANAGER,
-    #             ROLE_DRIVER,
-    #             ROLE_BRANCH_MANAGER,
-    #         ]
-    #     ),
-    # ]
-    # permission_classes = [
-    #     IsAuthenticated,
-    #     RolePermission.for_roles(
-    #         [
-    #             ROLE_ADMIN,
-    #             ROLE_FLEET_MANAGER,
-    #             ROLE_DRIVER,
-    #             ROLE_BRANCH_MANAGER,
-    #         ]
-    #     ),
-    # ]
-    queryset = TripEvent.objects.select_related("trip", "location")
+
+    permission_classes = [
+        IsAuthenticated,
+        RolePermission.for_roles(
+            [
+                ROLE_ADMIN,
+                ROLE_FLEET_MANAGER,
+                ROLE_DRIVER,
+                ROLE_BRANCH_MANAGER,
+            ]
+        ),
+    ]
+    queryset = TripEvent.objects.prefetch_related(
+        "trip",
+        "location",
+    ).select_related(
+        "trip",
+        "location",
+    )
 
     def get_serializer_class(self):
         if self.action == "create":

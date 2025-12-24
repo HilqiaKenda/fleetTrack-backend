@@ -329,6 +329,7 @@ class AdminDashboardViewSet(GenericViewSet):
         IsAdminUser,
         RolePermission.for_roles([ROLE_ADMIN]),
     ]
+    pagination_class = None
 
     def get_serializer_class(self):
         return EmptySerializer
@@ -360,8 +361,8 @@ class AdminDashboardViewSet(GenericViewSet):
 
             # Check cache
             cache_key = f"admin_dashboard_{period}_{branch_ids}_{include_inactive}"
-            # print(request.user.role)
             cached_data = cache.get(cache_key)
+
             if cached_data:
                 return Response(
                     {
@@ -390,6 +391,7 @@ class AdminDashboardViewSet(GenericViewSet):
                 vehicle_filter &= Q(is_active=True)
 
             overview_data = self._get_overview_data(vehicle_filter, trip_filter)
+            trip_summary = self._get_trip_summary(trip_filter)
             vehicle_distribution = self._get_vehicle_distribution(vehicle_filter)
             operations_metrics = self._get_operations_metrics(trip_filter)
             alerts_summary = self._get_alerts_summary(period_filter)
@@ -398,6 +400,7 @@ class AdminDashboardViewSet(GenericViewSet):
             system_health = self._get_system_health()
             dashboard_data = {
                 "overview": overview_data,
+                "trips_summary": trip_summary,
                 "vehicle_distribution": vehicle_distribution,
                 "operations_metrics": operations_metrics,
                 "alerts_summary": alerts_summary,
@@ -497,23 +500,49 @@ class AdminDashboardViewSet(GenericViewSet):
 
     def _get_overview_data(self, vehicle_filter, trip_filter):
         """Aggregate overview statistics"""
-        vehicles = Vehicle.objects.filter(vehicle_filter)
-        trips = Trip.objects.filter(trip_filter)
+        vehicles = Vehicle.objects.values_list("id", "is_active").filter(vehicle_filter)
+        trips = Trip.objects.values_list("id").filter(trip_filter)
 
         return {
             "total_vehicles": vehicles.count(),
+            "trips_summary": Trip.objects.values_list("id").count(),
             "active_vehicles": vehicles.filter(is_active=True).count(),
             "inactive_vehicles": vehicles.filter(is_active=False).count(),
-            "total_drivers": Driver.objects.count(),
-            "total_branches": Carrier.objects.count(),
+            "total_drivers": Driver.objects.values_list("id").count(),
+            "total_branches": Carrier.objects.values_list("id").count(),
             "total_trips_period": trips.count(),
             "completed_trips": trips.filter(is_completed=True).count(),
             "in_progress_trips": trips.filter(is_completed=False).count(),
         }
 
+    def _get_trip_summary(self, trip_filter):
+        """Return count of trips by status + total trips"""
+        trips = Trip.objects.filter(trip_filter)
+
+        # Group by status
+        status_counts = trips.values("status").annotate(count=Count("id")).order_by()
+
+        # Convert list → dictionary for easy frontend use
+        status_dict = {item["status"]: item["count"] for item in status_counts}
+
+        return {
+            "total_trips": trips.count(),
+            "status_breakdown": {
+                "active": status_dict.get("active", 0),
+                "assigned": status_dict.get("assigned", 0),
+                "schedule": status_dict.get("schedule", 0),
+                "completed": status_dict.get("completed", 0),
+                "cancelled": status_dict.get("cancelled", 0),
+            },
+        }
+
     def _get_vehicle_distribution(self, vehicle_filter):
         """Return vehicle count grouped by carrier"""
-        vehicles = Vehicle.objects.filter(vehicle_filter)
+        vehicles = (
+            Vehicle.objects.prefetch_related("carrier", "branch")
+            .select_related("carrier", "branch")
+            .filter(vehicle_filter)
+        )
         return list(
             vehicles.values("carrier__name")
             .annotate(vehicle_count=Count("id"))
@@ -522,7 +551,11 @@ class AdminDashboardViewSet(GenericViewSet):
 
     def _get_operations_metrics(self, trip_filter):
         """Return total miles, avg miles, total hours driven"""
-        trips = Trip.objects.filter(trip_filter)
+        trips = (
+            Trip.objects.prefetch_related("driver", "co_driver", "vehicle")
+            .select_related("driver", "co_driver", "vehicle")
+            .filter(trip_filter)
+        )
 
         total_miles = trips.aggregate(total=Count("total_miles_driving"))["total"] or 0
         avg_miles = trips.aggregate(avg=Count("total_mileage_today"))["avg"] or 0
@@ -602,6 +635,7 @@ class DriverDashboardViewSet(GenericViewSet):
         IsAuthenticated,
         RolePermission.for_roles([ROLE_ADMIN, ROLE_DRIVER]),
     ]
+    pagination_class = None
 
     @action(detail=False, methods=["get"], url_path="summary")
     def driver_summary(self, request):
@@ -614,7 +648,11 @@ class DriverDashboardViewSet(GenericViewSet):
             )
 
         try:
-            driver = Driver.objects.get(id=driver_id)
+            driver = (
+                Driver.objects.prefetch_related("user", "branch")
+                .select_related("user", "branch")
+                .get(id=driver_id)
+            )
         except Driver.DoesNotExist:
             return Response(
                 {"status": False, "message": "Driver not found"},
@@ -622,13 +660,31 @@ class DriverDashboardViewSet(GenericViewSet):
             )
 
         # Get all trips by this driver
-        all_trips = Trip.objects.filter(driver_id=driver.id)
-        trips_count = Trip.objects.filter(driver_id=driver.id).count()
+        all_trips = (
+            Trip.objects.prefetch_related("driver", "co_driver", "vehicle")
+            .select_related("driver", "co_driver", "vehicle")
+            .filter(driver_id=driver.id)
+        )
+        trips_count = (
+            Trip.objects.prefetch_related("driver", "co_driver", "vehicle")
+            .select_related("driver", "co_driver", "vehicle")
+            .filter(driver_id=driver.id)
+            .count()
+        )
 
         # Get all vehicles used
         vehicle_ids = all_trips.values_list("vehicle_id", flat=True).distinct()
-        used_vehicles = Vehicle.objects.filter(id__in=vehicle_ids)
-        all_vehicles = Vehicle.objects.filter(id__in=vehicle_ids).count()
+        used_vehicles = (
+            Vehicle.objects.prefetch_related("carrier", "branch")
+            .select_related("carrier", "branch")
+            .filter(id__in=vehicle_ids)
+        )
+        all_vehicles = (
+            Vehicle.objects.prefetch_related("branch", "carrier")
+            .select_related("carrier", "branch")
+            .filter(id__in=vehicle_ids)
+            .count()
+        )
 
         # Get current assigned trip
         current_trip = all_trips.filter(
@@ -676,7 +732,11 @@ class DriverViewSet(
     UpdateModelMixin,
     GenericViewSet,
 ):
-    queryset = Driver.objects.all()
+    queryset = (
+        Driver.objects.prefetch_related("user", "branch")
+        .select_related("user", "branch")
+        .all()
+    )
     serializer_class = DriverSerializer
     # permission_classes = [IsAuthenticated, RolePermission([ROLE_DRIVER, ROLE_ADMIN])]
 
@@ -684,7 +744,12 @@ class DriverViewSet(
     def trips(self, request, pk=None):
         """Get trips for a specific driver"""
         driver = self.get_object()
-        trips = Trip.objects.filter(driver=driver).order_by("-date")
+        trips = (
+            Trip.objects.prefetch_related("driver", "co_driver")
+            .select_related("driver", "co_driver")
+            .filter(driver=driver)
+            .order_by("-date")
+        )
         serializer = TripSerializer(trips, many=True)
         return Response(serializer.data)
 
@@ -695,7 +760,11 @@ class DriverViewSet(
         date_from = request.query_params.get("date_from")
         date_to = request.query_params.get("date_to")
 
-        trips = Trip.objects.filter(driver=driver)
+        trips = (
+            Trip.objects.prefetch_related("driver", "co_driver")
+            .select_related("driver", "co_driver")
+            .filter(driver=driver)
+        )
         if date_from:
             trips = trips.filter(date__gte=date_from)
         if date_to:
@@ -735,7 +804,11 @@ class BranchViewSet(
     Branch management
     """
 
-    queryset = Branch.objects.all().prefetch_related("branch_managers")
+    queryset = (
+        Branch.objects.all()
+        .prefetch_related("branch_managers")
+        .select_related("branch_managers")
+    )
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["name", "code", "city", "region", "status"]
     ordering_fields = ["name", "city", "region", "status", "created_at"]
@@ -764,10 +837,9 @@ class BranchViewSet(
             "branch_name": branch.name,
             "total_vehicles": branch.get_vehicle_count(),
             "active_vehicles": branch.get_active_vehicle_count(),
-            "inactive_vehicles": branch.get_vehicle_count()
-            - branch.get_active_vehicle_count(),
+            "inactive_vehicles": branch.get_vehicle_count(),
             "total_drivers": branch.get_driver_count(),
-            "active_trips": 0,  # Integrate with Trip model later
+            "active_trips": 0,
             "completed_trips": 0,
             "maintenance_pending": 0,
             "capacity_usage": (
@@ -792,7 +864,9 @@ class BranchManagerViewSet(
     Branch Manager management.
     """
 
-    queryset = BranchManager.objects.select_related("branch", "user")
+    queryset = BranchManager.objects.prefetch_related("branch", "user").select_related(
+        "branch", "user"
+    )
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["user__username", "branch__name", "role"]
     ordering_fields = ["assigned_date", "is_primary", "is_active"]
@@ -829,7 +903,9 @@ class BranchAssignmentViewSet(
     Branch Assignments (staff/driver assignments).
     """
 
-    queryset = BranchAssignment.objects.select_related("branch", "user")
+    queryset = BranchAssignment.objects.prefetch_related(
+        "branch", "user"
+    ).select_related("branch", "user")
     serializer_class = BranchAssignmentSerializer
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["user__username", "branch__name", "assignment_type"]
@@ -859,7 +935,11 @@ class BranchStatisticsViewSet(GenericViewSet, ListModelMixin):
 
     def list(self, request, *args, **kwargs):
         """Return aggregated statistics for all branches."""
-        branches = Branch.objects.all()
+        branches = (
+            Branch.objects.select_related("organization")
+            .select_related("organization")
+            .all()
+        )
         data = []
 
         for branch in branches:
@@ -885,212 +965,3 @@ class BranchStatisticsViewSet(GenericViewSet, ListModelMixin):
 
         serializer = self.get_serializer(data, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
-
-
-# class CookieTokenMixin:
-#     """
-#     Mixin to handle JWT token cookie operations
-#     """
-
-#     def set_auth_cookies(self, response, user):
-#         """Set access and refresh tokens in HTTP-only cookies"""
-#         refresh = RefreshToken.for_user(user)
-#         access_token = str(refresh.access_token)
-#         refresh_token = str(refresh)
-
-#         # Set access token cookie
-#         response.set_cookie(
-#             key="access_token",
-#             value=access_token,
-#             httponly=True,
-#             secure=True,
-#             samesite="Strict",
-#             max_age=3600,  # 1 hour
-#             path="/",
-#         )
-
-#         # Set refresh token cookie
-#         response.set_cookie(
-#             key="refresh_token",
-#             value=refresh_token,
-#             httponly=True,
-#             secure=True,
-#             samesite="Strict",
-#             max_age=86400 * 7,  # 7 days
-#             path="/",
-#         )
-
-#         return response
-
-#     def clear_auth_cookies(self, response):
-#         """Clear authentication cookies"""
-#         response.delete_cookie("access_token", path="/")
-#         response.delete_cookie("refresh_token", path="/")
-#         return response
-
-
-# class RegisterViewSet(CookieTokenMixin, CreateModelMixin, GenericViewSet):
-#     """
-#     Body: {
-#         "username": "string",
-#         "email": "string",
-#         "password": "string",
-#         "password2": "string",
-#         "role": "string" (optional, defaults to "Driver")
-#     }
-#     """
-
-#     serializer_class = RegisterSerializer
-#     permission_classes = [AllowAny]
-#     # authentication_classes = []
-
-#     def create(self, request, *args, **kwargs):
-#         """Register a new user and set JWT tokens in HTTP-only cookies"""
-#         serializer = self.get_serializer(data=request.data)
-#         serializer.is_valid(raise_exception=True)
-#         user = serializer.save()
-
-#         response = Response(
-#             {
-#                 "user": UserSerializer(user).data,
-#                 "message": "User registered successfully",
-#             },
-#             status=status.HTTP_201_CREATED,
-#         )
-
-#         # Set authentication cookies
-#         response = self.set_auth_cookies(response, user)
-
-#         return response
-
-
-# class LoginViewSet(CookieTokenMixin, GenericViewSet):
-#     """
-#     User Login ViewSet
-
-#     POST /api/api.v1.1/login/
-#     Body: {
-#         "username": "string",
-#         "password": "string"
-#     }
-#     """
-
-#     serializer_class = LoginSerializer
-#     permission_classes = [AllowAny]
-#     # authentication_classes = []
-
-#     def create(self, request, *args, **kwargs):
-#         """Authenticate user and set JWT tokens in HTTP-only cookies"""
-#         serializer = self.get_serializer(data=request.data)
-#         serializer.is_valid(raise_exception=True)
-
-#         user = serializer.validated_data["user"]
-
-#         response = Response(
-#             {
-#                 "user": UserSerializer(user).data,
-#                 "message": "Login successful",
-#             },
-#             status=status.HTTP_200_OK,
-#         )
-
-#         # Set authentication cookies
-#         response = self.set_auth_cookies(response, user)
-
-#         return response
-
-
-# class LogoutViewSet(CookieTokenMixin, GenericViewSet):
-#     """
-#     User Logout ViewSet
-#     """
-
-#     permission_classes = [IsAuthenticated]
-#     # authentication_classes = [CookieJWTAuthentication]
-#     serializer_class = UserSerializer
-
-#     def create(self, request, *args, **kwargs):
-#         """Logout user by blacklisting refresh token and clearing cookies"""
-#         refresh_token = request.COOKIES.get("refresh_token")
-
-#         # Try to blacklist the refresh token if it exists
-#         if refresh_token:
-#             try:
-#                 token = RefreshToken(refresh_token)
-#                 token.blacklist()
-#             except (TokenError, Exception):
-#                 # Token might already be blacklisted or invalid
-#                 # Continue with logout anyway
-#                 pass
-
-#         response = Response(
-#             {"message": "Successfully logged out"},
-#             status=status.HTTP_200_OK,
-#         )
-
-#         # Clear authentication cookies
-#         response = self.clear_auth_cookies(response)
-
-#         return response
-
-
-# class RefreshTokenViewSet(CookieTokenMixin, GenericViewSet):
-#     """
-#     Token Refresh ViewSet
-#     """
-
-#     permission_classes = [AllowAny]
-#     # authentication_classes = []
-#     serializer_class = UserSerializer
-
-#     def create(self, request, *args, **kwargs):
-#         """Refresh access token using refresh token from cookie"""
-#         refresh_token = request.COOKIES.get("refresh_token")
-
-#         if not refresh_token:
-#             return Response(
-#                 {"detail": "Refresh token not found in cookies."},
-#                 status=status.HTTP_400_BAD_REQUEST,
-#             )
-
-#         try:
-#             token = RefreshToken(refresh_token)
-
-#             # Check if token is blacklisted
-#             jti = token.get("jti")
-#             if BlacklistedToken.objects.filter(token__jti=jti).exists():
-#                 response = Response(
-#                     {"detail": "Token has been blacklisted. Please login again."},
-#                     status=status.HTTP_401_UNAUTHORIZED,
-#                 )
-#                 response = self.clear_auth_cookies(response)
-#                 return response
-
-#             # Generate new access token
-#             access_token = str(token.access_token)
-
-#             response = Response(
-#                 {"message": "Token refreshed successfully"},
-#                 status=status.HTTP_200_OK,
-#             )
-
-#             # Set new access token in cookie
-#             response.set_cookie(
-#                 key="access_token",
-#                 value=access_token,
-#                 httponly=True,
-#                 secure=True,
-#                 samesite="Strict",
-#                 max_age=3600,  # 1 hour
-#                 path="/",
-#             )
-
-#             return response
-
-#         except TokenError:
-#             response = Response(
-#                 {"detail": "Invalid or expired refresh token. Please login again."},
-#                 status=status.HTTP_401_UNAUTHORIZED,
-#             )
-#             response = self.clear_auth_cookies(response)
-#             return response

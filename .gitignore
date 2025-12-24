@@ -83,6 +83,8 @@ profile_default/
 ipython_config.py
 
 # Ignore all migrations
+# track/migrations/
+# user/migrations/
 migrations/
 **/migrations/*
 !**/migrations/__init__.py
