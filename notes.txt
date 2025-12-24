@@ -11,10 +11,33 @@ Terminal directories && Commands:
         cd Desktop/projects/track_truck/dashboard
         pnpm run dev
 
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
+    }
+}
+
+
 
 Payment App
-    - subscription mdels
-    - subscription_plane models
-    - update sbscription
-    - cancel sbscription
-    - invoice
+    - Subscription_plan models
+    - Subscription models
+    - payment  model
+    - Invoice model
+
+    srvice:
+        - Transaction:
+            - deposit
+            - withdraw
+            - transfert
+            - payment
+
+        - Transaction Status:
+            - PENDING
+            - SUCCESS
+            - FAILED
+            - CANCEL
+            - PROCESSING
+        
+        - Verification Result
