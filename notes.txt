@@ -1,0 +1,20 @@
+Terminal directories && Commands:
+    - Backend:
+        cd Desktop/projects/track_truck/backend
+        source venv/bin/activate
+        python manage.py runserver
+        python manage.py makemigrations
+        python manage.py migrate
+        python manage.py seed_data
+
+    - Dashboard
+        cd Desktop/projects/track_truck/dashboard
+        pnpm run dev
+
+
+Payment App
+    - subscription mdels
+    - subscription_plane models
+    - update sbscription
+    - cancel sbscription
+    - invoice
