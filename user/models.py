@@ -6,8 +6,10 @@ from django.contrib.auth.models import (
     BaseUserManager,
     PermissionsMixin,
 )
+from django.contrib.gis.db import models as gps_model
+from django.utils.translation import gettext_lazy
 
-from django.utils.translation import gettext_lazy as _
+# from django.utils.translation import gettext_lazy as _
 
 
 class UserManager(BaseUserManager):
@@ -69,7 +71,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         max_length=50,
         choices=ROLE_CHOICES,
         default="driver",
-        help_text=_("The role of the user in the system."),
+        help_text=gettext_lazy("The role of the user in the system."),
     )
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
@@ -85,8 +87,8 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     class Meta:
         db_table = "users"
-        verbose_name = _("user")
-        verbose_name_plural = _("users")
+        verbose_name = gettext_lazy("user")
+        verbose_name_plural = gettext_lazy("users")
         indexes = [
             models.Index(fields=["email"]),
             models.Index(fields=["username"]),
@@ -172,23 +174,26 @@ class Organization(models.Model):
         ("active", "Active"),
         ("suspended", "Suspended"),
         ("inactive", "Inactive"),
+        ("banned", "Banned"),
     ]
 
     name = models.CharField(
-        max_length=255, unique=True, help_text=_("Organization name")
+        max_length=255, unique=True, help_text=gettext_lazy("Organization name")
     )
     code = models.CharField(
         max_length=10,
         unique=True,
-        help_text=_("Unique short code identifier (e.g., ORG001, TFC, KLM)"),
+        help_text=gettext_lazy("Unique short code identifier (e.g., ORG001, TFC, KLM)"),
     )
     registration_number = models.CharField(
-        max_length=100, blank=True, help_text=_("Company registration or tax number")
+        max_length=100,
+        blank=True,
+        help_text=gettext_lazy("Company registration or tax number"),
     )
     email = models.EmailField(blank=True, null=True)
     phone_regex = RegexValidator(
         regex=r"^\+?1?\d{9,15}$",
-        message=_(
+        message=gettext_lazy(
             "Phone number must be in format: '+999999999'. Up to 15 digits allowed."
         ),
     )
@@ -196,9 +201,14 @@ class Organization(models.Model):
         validators=[phone_regex],
         max_length=17,
         blank=True,
-        help_text=_("Primary contact number"),
+        help_text=gettext_lazy("Primary contact number"),
     )
-    address = models.TextField(blank=True, help_text=_("Head office address"))
+    address = models.TextField(
+        blank=True, help_text=gettext_lazy("Head office address")
+    )
+    location = gps_model.PointField(
+        null=True, blank=True, geography=True, spatial_index=True
+    )
     website = models.URLField(blank=True, null=True)
     logo = models.ImageField(upload_to="organization_logos/", null=True, blank=True)
 
@@ -214,8 +224,8 @@ class Organization(models.Model):
     class Meta:
         db_table = "organizations"
         ordering = ["name"]
-        verbose_name = _("Organization")
-        verbose_name_plural = _("Organizations")
+        verbose_name = gettext_lazy("Organization")
+        verbose_name_plural = gettext_lazy("Organizations")
         indexes = [
             models.Index(fields=["name"]),
             models.Index(fields=["code"]),
@@ -245,6 +255,9 @@ class Carrier(models.Model):
     dot_number = models.CharField(max_length=20, unique=True, blank=True)
     mc_number = models.CharField(max_length=20, blank=True)
     address = models.TextField(blank=True)
+    location = gps_model.PointField(
+        null=True, blank=True, geography=True, spatial_index=True
+    )
     phone = models.CharField(max_length=20, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -274,7 +287,7 @@ class Branch(models.Model):
         on_delete=models.CASCADE,
         related_name="branches",
         default=0,
-        help_text=_("The organization this branch belongs to."),
+        help_text=gettext_lazy("The organization this branch belongs to."),
     )
     name = models.CharField(max_length=255, unique=True)
     code = models.CharField(
@@ -283,6 +296,9 @@ class Branch(models.Model):
 
     # Location details
     address = models.TextField()
+    location = gps_model.PointField(
+        null=True, blank=True, geography=True, spatial_index=True
+    )
     city = models.CharField(max_length=100)
     region = models.CharField(max_length=100)
     country = models.CharField(max_length=100, default="Uganda")

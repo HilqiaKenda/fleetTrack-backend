@@ -52,7 +52,7 @@ class VehicleSerializer(serializers.ModelSerializer):
 
 class TripEventSerializer(serializers.ModelSerializer):
     location_address = serializers.CharField(source="location.address", read_only=True)
-    location_data = LocationSerializer(source="location", read_only=True)
+    # location_data = LocationSerializer(source="location", read_only=True)
 
     class Meta:
         model = TripEvent
@@ -65,7 +65,7 @@ class TripEventSerializer(serializers.ModelSerializer):
             "notes",
             "location",
             "location_address",
-            "location_data",
+            # "location_data",
             "created_at",
             "updated_at",
         ]
@@ -104,31 +104,24 @@ class TripSerializer(serializers.ModelSerializer):
     driver_name = serializers.CharField(source="driver.full_name", read_only=True)
     co_driver_name = serializers.CharField(source="co_driver.full_name", read_only=True)
     vehicle_info = serializers.CharField(source="vehicle.truck_number", read_only=True)
-    carrier_name = serializers.CharField(source="vehicle.carrier.name", read_only=True)
 
     cycle_hours_used = serializers.ReadOnlyField()
-    origin_location = LocationSerializer(read_only=True)
-    destination_location = LocationSerializer(read_only=True)
 
     events = TripEventSerializer(many=True, read_only=True)
     events_count = serializers.SerializerMethodField()
-
-    current_location = serializers.SerializerMethodField()
-    pickup_location = serializers.SerializerMethodField()
-    dropoff_location = serializers.SerializerMethodField()
 
     class Meta:
         model = Trip
         fields = [
             "id",
             "date",
+            "time",
             "driver",
             "driver_name",
             "co_driver",
             "co_driver_name",
             "vehicle",
             "vehicle_info",
-            "carrier_name",
             "shipper_and_commodity",
             "cycle_rule",
             "total_miles_driving",
@@ -145,9 +138,6 @@ class TripSerializer(serializers.ModelSerializer):
             "events_count",
             "origin_location",
             "destination_location",
-            "current_location",
-            "pickup_location",
-            "dropoff_location",
             "created_at",
             "updated_at",
         ]
@@ -198,12 +188,6 @@ class TripSerializer(serializers.ModelSerializer):
 class TripCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating trips with initial event data"""
 
-    initial_events = TripEventCreateSerializer(many=True, write_only=True)
-
-    current_location = serializers.DictField(write_only=True, required=False)
-    pickup_location = serializers.DictField(write_only=True, required=False)
-    dropoff_location = serializers.DictField(write_only=True, required=False)
-
     driver_initial = serializers.CharField(write_only=True, required=False)
     carrier_name = serializers.CharField(write_only=True, required=False)
     truck_number = serializers.CharField(write_only=True, required=False)
@@ -219,10 +203,6 @@ class TripCreateSerializer(serializers.ModelSerializer):
             "cycle_rule",
             "total_mileage_today",
             "remarks",
-            "initial_events",
-            "current_location",
-            "pickup_location",
-            "dropoff_location",
             "driver_initial",
             "carrier_name",
             "truck_number",
@@ -253,10 +233,8 @@ class TripCreateSerializer(serializers.ModelSerializer):
                 }
             )
 
-        if "dropoff_location" in validated_data:
             legacy_locations.append(
                 {
-                    "location_data": validated_data.pop("dropoff_location"),
                     "event_type": "unloading",
                     "timestamp": timezone.now(),
                     "notes": "Dropoff location",
