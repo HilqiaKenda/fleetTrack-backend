@@ -25,7 +25,13 @@ load_dotenv()
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
+
 SECRET_KEY = config("BACKEND_SECRET_KEY")
+
+
+FLUTTERWAVE_BASE_URL=config("FLUTTERWAVE_BASE_URL")
+FLUTTERWAVE_PUBLIC_KEY=config("FLUTTERWAVE_PUBLIC_KEY")
+FLUTTERWAVE_SECRET_KEY=config("FLUTTERWAVE_SECRET_KEY")
 
 
 # Application definition
@@ -37,9 +43,12 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "rest_framework_swagger",
+    "drf_yasg",
     "corsheaders",
     "rest_framework",
     "rest_framework_simplejwt.token_blacklist",
+    "django.contrib.gis",  # Enable GeoDjango
     "track",
     "user",
 ]
@@ -118,7 +127,6 @@ DB_USER = config("DB_USER")
 DB_PASSWORD = config("DB_PASSWORD")
 DB_HOST = config("DB_HOST")
 DB_PORT = config("DB_PORT")
-
 
 DATABASES = {
     "default": {
@@ -285,6 +293,8 @@ CSRF_COOKIE_SECURE = True
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
+
+# APPEND_SLASH = False
 
 SECURE_HSTS_SECONDS = 31536000
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
