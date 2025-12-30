@@ -38,3 +38,24 @@ class FlutterWaveConfig:
         """Get Flutter Base Url"""
 
         return settings.FLUTTERWAVE_BASE_URL
+    
+    @staticmethod
+    def get_app_base_url() -> str:
+        return getattr(settings, "APP_BASE_URL", "http://127.0.0.1:8000")
+
+    @staticmethod
+    def get_webhook_url() -> str:
+        return getattr(settings, "FLUTTERWAVE_WEBHOOK_URL", "")
+
+    @staticmethod
+    def get_timeout() -> int:
+        return getattr(settings, "FLUTTERWAVE_TIMEOUT", 30)
+
+    @staticmethod
+    def is_local_environment() -> bool:
+        """Check if running in local/dev environment"""
+        return False
+
+    @staticmethod
+    def get_hash_secret() -> str:
+        return getattr(settings, "FLUTTERWAVE_SECRET_HASH", "")

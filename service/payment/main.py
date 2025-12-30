@@ -1,11 +1,14 @@
-from backend.service.payment.exception_handler import ProviderNotFoundError
+from decimal import Decimal
+from typing import Dict
+from service.payment.exception_handler import ProviderNotFoundError
+from service.payment.providers.flutterwave.flutterwave_processor import FlutterwaveProcessor
 
 
 class PaymentService:
     """Main Payment Operations Handler"""
 
     PROVIDER = {
-            "flutterWave": ""
+            "flutterWave": FlutterwaveProcessor
         }
     
     def __init__(self,provider):
@@ -28,7 +31,7 @@ class PaymentService:
         
         return provider_class()
 
-    def deposit(self, amount, user, **option):
+    def deposit(self, amount: Decimal, user: Dict[str, str], tx_ref, **options):
         """
         When a user has make a payment
 
@@ -46,8 +49,9 @@ class PaymentService:
         Returns:
             PaymentResult with payment link and transaction details
         """
+        return self._provider.deposit(amount, user, tx_ref, **options)
 
-    def withdraw(self, amount, recipient, method, tx_ref, **option):
+    def withdraw(self, amount, recipient, method, tx_ref, **options):
         """
         Withdrawal process  with thw amount to withdraw currency recepient details
 
@@ -65,8 +69,14 @@ class PaymentService:
         Returns:
             PaymentResult with transaction details
         """
+        return self._provider.withdraw(amount, recipient, method, tx_ref, **options)
 
-    def transfert(self, amount, sender, recipient, tx_ref, **option):
+
+    def transfert(self, amount, sender, recipient, tx_ref, **options):
         """
         Transaction process between accounts
         """
+
+        return self._provider.transfer(amount, sender, recipient, tx_ref, **options)
+    
+

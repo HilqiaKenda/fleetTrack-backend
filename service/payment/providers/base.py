@@ -3,18 +3,19 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
-class TrasnsactionType:
+class TrasnsactionType(Enum):
     """Type of Transaction"""
 
     DEPOSIT="deposit"
     WITHDRAW="withdraw"
     TRANSFER="transfer"
 
-class TransactionStatus:
+class TransactionStatus(Enum):
     """Transaction Status"""
 
     SUCCESS="success"
     FAILED="failed"
+    PENDING="pending"
     PROCESSING="processing"
     CANCELED="canceled"
 
