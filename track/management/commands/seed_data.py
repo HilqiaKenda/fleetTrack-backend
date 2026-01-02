@@ -22,7 +22,7 @@ class Command(BaseCommand):
     help = "Seed the database with demo data for organizations, branches, vehicles, drivers, and trips"
 
     # --- MAIN CONFIGURATION ---
-    NUM_TRIPS = 900
+    NUM_TRIPS = 1000
     NUM_DRIVERS = NUM_TRIPS // 2
     NUM_VEHICLES = NUM_TRIPS // 3
     NUM_BRANCHES = NUM_TRIPS // 5
@@ -245,7 +245,13 @@ class Command(BaseCommand):
     # ---------------------
     def create_trips(self, drivers, vehicles, locations, num):
         trips = []
-        possible_statuses = ["active", "assigned", "schedule", "completed", "cancelled"]
+        possible_statuses = [
+            "active",
+            "assigned",
+            "scheduled",
+            "completed",
+            "cancelled",
+        ]
 
         for _ in range(num):
             driver = choice(drivers)
