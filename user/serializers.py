@@ -592,6 +592,14 @@ class DriverSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
+
+class DriverDashboardSerializer(serializers.Serializer):
+    active_trips = serializers.IntegerField()
+    driving_hours_today = serializers.FloatField()
+    on_duty_hours_today = serializers.FloatField()
+
+
+
 class CarrierSerializer(serializers.ModelSerializer):
     """Carrier/Company serializer"""
 

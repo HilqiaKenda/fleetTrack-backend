@@ -62,7 +62,6 @@ class Vehicle(models.Model):
     license_plate = models.CharField(max_length=20, blank=True)
     is_active = models.BooleanField(default=True)
     status = models.CharField(max_length=25, choices=STATUS_CHOICES, default="active")
-    carrier = models.ForeignKey(Carrier, on_delete=models.CASCADE, related_name="vehicles")
     branch = models.ForeignKey("user.Branch", on_delete=models.CASCADE, related_name="vehicles", default=0)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -77,24 +76,23 @@ class Trip(models.Model):
     CYCLE_RULE_CHOICES = [("70hr/8day", "70hr/8day"), ("60hr/7day", "60hr/7day")]
     STATUS_CHOICES = [
         ("active", "active"),
-        ("assigned", "assigned"),
         ("scheduled", "scheduled"),
         ("completed", "completed"),
         ("cancelled", "cancelled"),
     ]
 
-    date = models.DateField()
-    time = models.TimeField(default=datetime.time(0,0))
+    date = models.DateField(null=False, blank=False)
+    time = models.TimeField(null=False, blank=False, default=datetime.time(0, 0))
 
     driver = models.ForeignKey(Driver, on_delete=models.CASCADE, related_name="trips")
     co_driver = models.ForeignKey(Driver, on_delete=models.SET_NULL, null=True, blank=True, related_name="co_driver_trips")
     vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE, related_name="trips")
     shipper_and_commodity = models.CharField(max_length=255, blank=True)
     cycle_rule = models.CharField(max_length=20, choices=CYCLE_RULE_CHOICES, default="70hr/8day")
-    
-    address = models.TextField(blank=True, help_text=gettext_lazy("The office address"))
+
+    address = models.TextField(blank=True, help_text=gettext_lazy("The origin office address"))
     origin_location = gps_model.PointField(null=True, blank=True, geography=True, spatial_index=True)
-    destinaton_address = models.TextField(blank=True, help_text=gettext_lazy("Head office address"))
+    destinaton_address = models.TextField(blank=True, help_text=gettext_lazy("The destination office address"))
     destination_location = gps_model.PointField(null=True, blank=True, geography=True, spatial_index=True)
 
     # Total trip metrics (calculated from trip events)
@@ -169,13 +167,16 @@ class TripEvent(models.Model):
     ]
 
     trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name="events")
-    location = models.ForeignKey(Location, on_delete=models.CASCADE, related_name="trip_events")
 
     event_type = models.CharField(max_length=20, choices=EVENT_TYPE_CHOICES)
     timestamp = models.DateTimeField()
     duration = models.FloatField(default=0.0, help_text="Duration in hours", validators=[MinValueValidator(0)])
-    miles_driven = models.FloatField(default=0.0, validators=[MinValueValidator(0)], help_text="Miles driven during this event",)
+    miles_driven = models.FloatField(default=0.0, validators=[MinValueValidator(0)], help_text="Miles driven during this event")
     notes = models.TextField(blank=True)
+
+    # Event-specific address and location
+    event_address = models.TextField(blank=True, help_text="Address of the event")
+    event_location = gps_model.PointField(null=True, blank=True, geography=True, spatial_index=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -185,7 +186,6 @@ class TripEvent(models.Model):
         indexes = [
             models.Index(fields=["trip", "timestamp"]),
             models.Index(fields=["event_type", "timestamp"]),
-            models.Index(fields=["location", "timestamp"]),
         ]
 
     def save(self, *args, **kwargs):
@@ -193,7 +193,7 @@ class TripEvent(models.Model):
         self.trip.calculate_totals()
 
     def __str__(self):
-        return f"{self.trip.id} - {self.get_event_type_display()} at {self.location.address}"
+        return f"{self.trip.id} - {self.get_event_type_display()} at {self.event_address}"
 
 
 class DashboardCache(models.Model):

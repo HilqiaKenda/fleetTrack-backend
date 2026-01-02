@@ -322,8 +322,6 @@ class Branch(models.Model):
     phone_number = models.CharField(validators=[phone_regex], max_length=17)
     email = models.EmailField()
 
-
-
     # Operational details
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="active")
     capacity = models.PositiveIntegerField(

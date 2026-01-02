@@ -11,6 +11,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.decorators import action
+from rest_framework.permissions import SAFE_METHODS
 from rest_framework.generics import GenericAPIView
 from rest_framework.mixins import (
     CreateModelMixin,
@@ -30,6 +31,7 @@ from user.utilities.permissions import (
     ROLE_MAINTENANCE,
     RolePermission,
 )
+from django.db import transaction
 from django.db.models import Prefetch
 from .models import (
     Carrier,
@@ -39,7 +41,9 @@ from .models import (
     Vehicle,
 )
 from .serializers import (
+    FleetDashboardSerializer,
     LocationSerializer,
+    SearchResponseSerializer,
     TripCreateSerializer,
     TripEventCreateSerializer,
     TripEventSerializer,
@@ -82,6 +86,7 @@ class LocationViewSet(
         return Response([])
 
 
+
 class VehicleViewSet(
     CreateModelMixin,
     ListModelMixin,
@@ -89,20 +94,64 @@ class VehicleViewSet(
     UpdateModelMixin,
     GenericViewSet,
 ):
-    permission_classes = [
-        IsAuthenticated,
-        RolePermission.for_roles(
-            [
-                ROLE_ADMIN,
-                ROLE_FLEET_MANAGER,
-                ROLE_MAINTENANCE,
-                ROLE_DRIVER,
-                ROLE_BRANCH_MANAGER,
+    """
+    Vehicle management with:
+    - CRUD
+    - Branch-based filtering
+    - Bulk upload
+    - Soft delete
+    - Trips per vehicle
+    """
+
+    def get_permissions(self):
+        if self.request.method in SAFE_METHODS:
+            return [
+                RolePermission.for_roles(
+                    [
+                        ROLE_ADMIN,
+                        ROLE_FLEET_MANAGER,
+                        ROLE_MAINTENANCE,
+                        ROLE_BRANCH_MANAGER,
+                        ROLE_DRIVER,
+                    ]
+                )()
             ]
-        ),
-    ]
-    queryset = Vehicle.objects.select_related("carrier", "branch")
+
+        return [
+            RolePermission.for_roles(
+                [
+                    ROLE_ADMIN,
+                    ROLE_FLEET_MANAGER,
+                    ROLE_MAINTENANCE,
+                    ROLE_BRANCH_MANAGER,
+                ]
+            )()
+        ]
+    
+    # permission_classes = [
+    #     RolePermission.for_roles(
+    #         [ROLE_ADMIN, ROLE_FLEET_MANAGER, ROLE_MAINTENANCE, ROLE_BRANCH_MANAGER]
+    #     )
+    # ]
     serializer_class = VehicleSerializer
+
+    def get_queryset(self):
+        # qs = Vehicle.objects.select_related("branch").filter(is_deleted=False)
+        qs = Vehicle.objects.select_related("branch")
+
+        if getattr(self, "swagger_fake_view", False):
+            return qs.none()
+
+        user = self.request.user
+        if user.role == ROLE_ADMIN:
+            return qs
+        return qs.filter(branch=user.branch)
+
+    def perform_destroy(self, instance):
+        """Soft delete"""
+        instance.is_deleted = True
+        instance.is_active = False
+        instance.save()
 
     @action(detail=True, methods=["get"])
     def trips(self, request, pk=None):
@@ -111,6 +160,77 @@ class VehicleViewSet(
         trips = Trip.objects.filter(vehicle=vehicle).order_by("-date")
         serializer = TripSerializer(trips, many=True)
         return Response(serializer.data)
+
+    @action(detail=False, methods=["post"], url_path="bulk-upload")
+    @transaction.atomic
+    def bulk_upload(self, request):
+        """
+        Bulk upload vehicles.
+        Expected payload: list of vehicles (truck_number required)
+        """
+        serializer = VehicleSerializer(data=request.data, many=True)
+        serializer.is_valid(raise_exception=True)
+
+        vehicles_to_create = []
+        for item in serializer.validated_data:
+            vin = item.get("vin")
+            if vin and Vehicle.objects.filter(vin=vin).exists():
+                continue  # skip duplicates
+            vehicles_to_create.append(Vehicle(**item))
+
+        Vehicle.objects.bulk_create(vehicles_to_create, ignore_conflicts=True)
+
+        return Response(
+            {"message": f"{len(vehicles_to_create)} vehicles uploaded successfully"},
+            status=status.HTTP_201_CREATED,
+        )
+    
+
+# class VehicleViewSet(
+#     CreateModelMixin,
+#     ListModelMixin,
+#     RetrieveModelMixin,
+#     UpdateModelMixin,
+#     GenericViewSet,
+# ):
+#     permission_classes = [
+#         IsAuthenticated,
+#         RolePermission.for_roles(
+#             [
+#                 ROLE_ADMIN,
+#                 ROLE_FLEET_MANAGER,
+#                 ROLE_MAINTENANCE,
+#                 ROLE_BRANCH_MANAGER,
+#             ]
+#         ),
+#     ]
+#     queryset = Vehicle.objects.select_related("branch")
+#     serializer_class = VehicleSerializer
+
+#     @action(detail=True, methods=["get"])
+#     def trips(self, request, pk=None):
+#         """Get trips for a specific vehicle"""
+#         vehicle = self.get_object()
+#         trips = Trip.objects.filter(vehicle=vehicle).order_by("-date")
+#         serializer = TripSerializer(trips, many=True)
+#         return Response(serializer.data)
+
+
+class FleetDashboardViewSet(GenericViewSet):
+    permission_classes = [IsAuthenticated]
+    serializer_class = FleetDashboardSerializer
+
+    def list(self, request):
+        qs = Vehicle.objects.filter(is_deleted=False)
+
+        data = {
+            "total_vehicles": qs.count(),
+            "active_vehicles": qs.filter(status="available").count(),
+            "booked_vehicles": qs.filter(status="booked").count(),
+            "maintenance_vehicles": qs.filter(status="maintainance").count(),
+        }
+
+        return Response(self.serializer_class(data).data)
 
 
 class TripViewSet(
@@ -318,6 +438,8 @@ class SearchViewSet(GenericViewSet):
     # permission_classes = [IsAuthenticated]
     # permission_classes = [IsAuthenticated, IsAdminUser]
 
+    serializer_class = SearchResponseSerializer
+    
     @action(detail=False, methods=["get"], url_path="search")
     def search(self, request):
         try:
