@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.db import transaction
-
+from django.contrib.gis.geos import Point
 from user.models import Carrier, Driver
 from .models import Location, Vehicle, Trip, TripEvent
 from time import timezone
@@ -32,7 +32,7 @@ class LocationSerializer(serializers.ModelSerializer):
 
 
 class VehicleSerializer(serializers.ModelSerializer):
-    carrier_name = serializers.CharField(source="carrier.name", read_only=True)
+    # carrier_name = serializers.CharField(source="carrier.name", read_only=True)
 
     class Meta:
         model = Vehicle
@@ -44,15 +44,15 @@ class VehicleSerializer(serializers.ModelSerializer):
             "year",
             "vin",
             "license_plate",
-            "carrier",
-            "carrier_name",
+            "branch",
+            # "carrier",
+            # "carrier_name",
             "created_at",
         ]
 
-
 class TripEventSerializer(serializers.ModelSerializer):
-    location_address = serializers.CharField(source="location.address", read_only=True)
-    # location_data = LocationSerializer(source="location", read_only=True)
+    latitude = serializers.SerializerMethodField()
+    longitude = serializers.SerializerMethodField()
 
     class Meta:
         model = TripEvent
@@ -63,18 +63,24 @@ class TripEventSerializer(serializers.ModelSerializer):
             "duration",
             "miles_driven",
             "notes",
-            "location",
-            "location_address",
-            # "location_data",
+            "event_address",
+            "event_location",
+            "latitude",
+            "longitude",
             "created_at",
             "updated_at",
         ]
 
+    def get_latitude(self, obj):
+        return obj.event_location.y if obj.event_location else None
+
+    def get_longitude(self, obj):
+        return obj.event_location.x if obj.event_location else None
+    
 
 class TripEventCreateSerializer(serializers.ModelSerializer):
-    """Serializer for creating trip events with nested location data"""
-
-    location_data = serializers.DictField(write_only=True)
+    latitude = serializers.FloatField(write_only=True, required=False)
+    longitude = serializers.FloatField(write_only=True, required=False)
 
     class Meta:
         model = TripEvent
@@ -84,20 +90,19 @@ class TripEventCreateSerializer(serializers.ModelSerializer):
             "duration",
             "miles_driven",
             "notes",
-            "location_data",
+            "event_address",
+            "latitude",
+            "longitude",
         ]
 
     def create(self, validated_data):
-        location_data = validated_data.pop("location_data")
+        lat = validated_data.pop("latitude", None)
+        lng = validated_data.pop("longitude", None)
 
-        location_serializer = LocationSerializer(data=location_data)
-        if location_serializer.is_valid():
-            location = location_serializer.save()
-        else:
-            raise serializers.ValidationError(location_serializer.errors)
+        if lat is not None and lng is not None:
+            validated_data["event_location"] = Point(lng, lat)
 
-        trip_event = TripEvent.objects.create(location=location, **validated_data)
-        return trip_event
+        return TripEvent.objects.create(**validated_data)
 
 
 class TripSerializer(serializers.ModelSerializer):
@@ -106,7 +111,6 @@ class TripSerializer(serializers.ModelSerializer):
     vehicle_info = serializers.CharField(source="vehicle.truck_number", read_only=True)
 
     cycle_hours_used = serializers.ReadOnlyField()
-
     events = TripEventSerializer(many=True, read_only=True)
     events_count = serializers.SerializerMethodField()
 
@@ -133,8 +137,8 @@ class TripSerializer(serializers.ModelSerializer):
             "cycle_hours_used",
             "remarks",
             "is_completed",
-            "events",
             "status",
+            "events",
             "events_count",
             "address",
             "origin_location",
@@ -143,6 +147,7 @@ class TripSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
         read_only_fields = [
             "total_miles_driving",
             "total_driving_hours",
@@ -155,132 +160,298 @@ class TripSerializer(serializers.ModelSerializer):
     def get_events_count(self, obj):
         return obj.events.count()
 
-    def get_current_location(self, obj):
-        """For backward compatibility - return the most recent location"""
-        latest_event = obj.events.order_by("-timestamp").first()
-        if latest_event:
-            return {
-                "address": latest_event.location.address,
-                "lat": latest_event.location.latitude,
-                "lng": latest_event.location.longitude,
-            }
-        return None
-
-    def get_pickup_location(self, obj):
-        """For backward compatibility - return origin location"""
-        if obj.origin_location:
-            return {
-                "address": obj.origin_location.address,
-                "lat": obj.origin_location.latitude,
-                "lng": obj.origin_location.longitude,
-            }
-        return None
-
-    def get_dropoff_location(self, obj):
-        """For backward compatibility - return destination location"""
-        if obj.destination_location:
-            return {
-                "address": obj.destination_location.address,
-                "lat": obj.destination_location.latitude,
-                "lng": obj.destination_location.longitude,
-            }
-        return None
 
 
 class TripCreateSerializer(serializers.ModelSerializer):
-    """Serializer for creating trips with initial event data"""
-
-    driver_initial = serializers.CharField(write_only=True, required=False)
-    carrier_name = serializers.CharField(write_only=True, required=False)
-    truck_number = serializers.CharField(write_only=True, required=False)
+    # truck_number = serializers.CharField(write_only=True, required=False)
 
     class Meta:
         model = Trip
         fields = [
             "date",
+            "time",
             "driver",
             "co_driver",
             "vehicle",
             "shipper_and_commodity",
             "cycle_rule",
-            "total_mileage_today",
             "remarks",
-            "driver_initial",
-            "carrier_name",
-            "truck_number",
+            # "truck_number",
+            "address",
+            "origin_location",
+            "destinaton_address",
+            "destination_location",
         ]
 
     @transaction.atomic
     def create(self, validated_data):
-        initial_events_data = validated_data.pop("initial_events", [])
-
-        legacy_locations = []
-        if "current_location" in validated_data:
-            legacy_locations.append(
-                {
-                    "location_data": validated_data.pop("current_location"),
-                    "event_type": "other",
-                    "timestamp": timezone.now(),
-                    "notes": "Current location",
-                }
-            )
-
-        if "pickup_location" in validated_data:
-            legacy_locations.append(
-                {
-                    "location_data": validated_data.pop("pickup_location"),
-                    "event_type": "loading",
-                    "timestamp": timezone.now(),
-                    "notes": "Pickup location",
-                }
-            )
-
-            legacy_locations.append(
-                {
-                    "event_type": "unloading",
-                    "timestamp": timezone.now(),
-                    "notes": "Dropoff location",
-                }
-            )
-
-        driver_initial = validated_data.pop("driver_initial", None)
-        carrier_name = validated_data.pop("carrier_name", None)
         truck_number = validated_data.pop("truck_number", None)
 
-        if driver_initial and not validated_data.get("driver"):
-            driver, _ = Driver.objects.get_or_create(
-                driver_initial=driver_initial,
-                defaults={
-                    "full_name": driver_initial,
-                    "license_number": f"LIC_{driver_initial}",
-                },
-            )
-            validated_data["driver"] = driver
-
         if truck_number and not validated_data.get("vehicle"):
-            if carrier_name:
-                carrier, _ = Carrier.objects.get_or_create(
-                    name=carrier_name,
-                    defaults={"dot_number": f"DOT_{carrier_name[:10]}"},
+            vehicle = Vehicle.objects.filter(truck_number=truck_number).first()
+            if not vehicle:
+                raise serializers.ValidationError(
+                    {"truck_number": "Vehicle not found"}
                 )
-            else:
-                carrier = Carrier.objects.first()
-                if not carrier:
-                    carrier = Carrier.objects.create(
-                        name="Default Carrier", dot_number="DOT_DEFAULT"
-                    )
-
-            vehicle, _ = Vehicle.objects.get_or_create(
-                truck_number=truck_number, defaults={"carrier": carrier}
-            )
             validated_data["vehicle"] = vehicle
 
         trip = Trip.objects.create(**validated_data)
-
-        all_events = initial_events_data + legacy_locations
-        for event_data in all_events:
-            event_serializer = TripEventCreateSerializer(data=event_data)
-            if event_serializer.is_valid():
-                event_serializer.save(trip=trip)
-
         return trip
+    
+
+class SearchResultsSerializer(serializers.Serializer):
+    count = serializers.IntegerField()
+    results = serializers.ListField()
+
+
+class SearchResponseSerializer(serializers.Serializer):
+    status = serializers.BooleanField()
+    query = serializers.CharField()
+    page = serializers.IntegerField()
+
+    drivers = SearchResultsSerializer()
+    carriers = SearchResultsSerializer()
+    trucks = SearchResultsSerializer()
+
+class FleetDashboardSerializer(serializers.Serializer):
+    total_vehicles = serializers.IntegerField()
+    active_vehicles = serializers.IntegerField()
+    booked_vehicles = serializers.IntegerField()
+    maintenance_vehicles = serializers.IntegerField()
+
+# class TripEventSerializer(serializers.ModelSerializer):
+#     location_address = serializers.CharField(source="location.address", read_only=True)
+#     # location_data = LocationSerializer(source="location", read_only=True)
+
+#     class Meta:
+#         model = TripEvent
+#         fields = [
+#             "id",
+#             "event_type",
+#             "timestamp",
+#             "duration",
+#             "miles_driven",
+#             "notes",
+#             "location",
+#             "location_address",
+#             # "location_data",
+#             "created_at",
+#             "updated_at",
+#         ]
+
+
+# class TripEventCreateSerializer(serializers.ModelSerializer):
+#     """Serializer for creating trip events with nested location data"""
+
+#     location_data = serializers.DictField(write_only=True)
+
+#     class Meta:
+#         model = TripEvent
+#         fields = [
+#             "event_type",
+#             "timestamp",
+#             "duration",
+#             "miles_driven",
+#             "notes",
+#             "location_data",
+#         ]
+
+#     def create(self, validated_data):
+#         location_data = validated_data.pop("location_data")
+
+#         location_serializer = LocationSerializer(data=location_data)
+#         if location_serializer.is_valid():
+#             location = location_serializer.save()
+#         else:
+#             raise serializers.ValidationError(location_serializer.errors)
+
+#         trip_event = TripEvent.objects.create(location=location, **validated_data)
+#         return trip_event
+
+
+# class TripSerializer(serializers.ModelSerializer):
+#     driver_name = serializers.CharField(source="driver.full_name", read_only=True)
+#     co_driver_name = serializers.CharField(source="co_driver.full_name", read_only=True)
+#     vehicle_info = serializers.CharField(source="vehicle.truck_number", read_only=True)
+
+#     cycle_hours_used = serializers.ReadOnlyField()
+
+#     events = TripEventSerializer(many=True, read_only=True)
+#     events_count = serializers.SerializerMethodField()
+
+#     class Meta:
+#         model = Trip
+#         fields = [
+#             "id",
+#             "date",
+#             "time",
+#             "driver",
+#             "driver_name",
+#             "co_driver",
+#             "co_driver_name",
+#             "vehicle",
+#             "vehicle_info",
+#             "shipper_and_commodity",
+#             "cycle_rule",
+#             "total_miles_driving",
+#             "total_mileage_today",
+#             "total_driving_hours",
+#             "total_on_duty_hours",
+#             "total_off_duty_hours",
+#             "total_sleeper_hours",
+#             "cycle_hours_used",
+#             "remarks",
+#             "is_completed",
+#             "events",
+#             "status",
+#             "events_count",
+#             "address",
+#             "origin_location",
+#             "destinaton_address",
+#             "destination_location",
+#             "created_at",
+#             "updated_at",
+#         ]
+#         read_only_fields = [
+#             "total_miles_driving",
+#             "total_driving_hours",
+#             "total_on_duty_hours",
+#             "total_off_duty_hours",
+#             "total_sleeper_hours",
+#             "cycle_hours_used",
+#         ]
+
+#     def get_events_count(self, obj):
+#         return obj.events.count()
+
+#     def get_current_location(self, obj):
+#         """For backward compatibility - return the most recent location"""
+#         latest_event = obj.events.order_by("-timestamp").first()
+#         if latest_event:
+#             return {
+#                 "address": latest_event.location.address,
+#                 "lat": latest_event.location.latitude,
+#                 "lng": latest_event.location.longitude,
+#             }
+#         return None
+
+#     def get_pickup_location(self, obj):
+#         """For backward compatibility - return origin location"""
+#         if obj.origin_location:
+#             return {
+#                 "address": obj.origin_location.address,
+#                 "lat": obj.origin_location.latitude,
+#                 "lng": obj.origin_location.longitude,
+#             }
+#         return None
+
+#     def get_dropoff_location(self, obj):
+#         """For backward compatibility - return destination location"""
+#         if obj.destination_location:
+#             return {
+#                 "address": obj.destination_location.address,
+#                 "lat": obj.destination_location.latitude,
+#                 "lng": obj.destination_location.longitude,
+#             }
+#         return None
+
+
+# class TripCreateSerializer(serializers.ModelSerializer):
+#     """Serializer for creating trips with initial event data"""
+
+#     # driver_initial = serializers.CharField(write_only=True, required=False)
+#     # carrier_name = serializers.CharField(write_only=True, required=False)
+#     truck_number = serializers.CharField(write_only=True, required=False)
+
+#     class Meta:
+#         model = Trip
+#         fields = [
+#             "date",
+#             "driver",
+#             "co_driver",
+#             "vehicle",
+#             "shipper_and_commodity",
+#             "cycle_rule",
+#             "remarks",
+#             "driver_initial",
+#             "truck_number",
+#             "address",
+#             "origin_location",
+#             "destinaton_address",
+#             "destination_location",
+#         ]
+
+#     @transaction.atomic
+#     def create(self, validated_data):
+#         initial_events_data = validated_data.pop("initial_events", [])
+
+#         legacy_locations = []
+#         if "current_location" in validated_data:
+#             legacy_locations.append(
+#                 {
+#                     "location_data": validated_data.pop("current_location"),
+#                     "event_type": "other",
+#                     "timestamp": timezone.now(),
+#                     "notes": "Current location",
+#                 }
+#             )
+
+#         if "pickup_location" in validated_data:
+#             legacy_locations.append(
+#                 {
+#                     "location_data": validated_data.pop("pickup_location"),
+#                     "event_type": "loading",
+#                     "timestamp": timezone.now(),
+#                     "notes": "Pickup location",
+#                 }
+#             )
+
+#             legacy_locations.append(
+#                 {
+#                     "event_type": "unloading",
+#                     "timestamp": timezone.now(),
+#                     "notes": "Dropoff location",
+#                 }
+#             )
+
+#         driver_initial = validated_data.pop("driver_initial", None)
+#         carrier_name = validated_data.pop("carrier_name", None)
+#         truck_number = validated_data.pop("truck_number", None)
+
+#         if driver_initial and not validated_data.get("driver"):
+#             driver, _ = Driver.objects.get_or_create(
+#                 driver_initial=driver_initial,
+#                 defaults={
+#                     "full_name": driver_initial,
+#                     "license_number": f"LIC_{driver_initial}",
+#                 },
+#             )
+#             validated_data["driver"] = driver
+
+#         if truck_number and not validated_data.get("vehicle"):
+#             if carrier_name:
+#                 carrier, _ = Carrier.objects.get_or_create(
+#                     name=carrier_name,
+#                     defaults={"dot_number": f"DOT_{carrier_name[:10]}"},
+#                 )
+#             else:
+#                 carrier = Carrier.objects.first()
+#                 if not carrier:
+#                     carrier = Carrier.objects.create(
+#                         name="Default Carrier", dot_number="DOT_DEFAULT"
+#                     )
+
+#             vehicle, _ = Vehicle.objects.get_or_create(
+#                 truck_number=truck_number, defaults={"carrier": carrier}
+#             )
+#             validated_data["vehicle"] = vehicle
+
+#         trip = Trip.objects.create(**validated_data)
+
+#         all_events = initial_events_data + legacy_locations
+#         for event_data in all_events:
+#             event_serializer = TripEventCreateSerializer(data=event_data)
+#             if event_serializer.is_valid():
+#                 event_serializer.save(trip=trip)
+
+#         return trip

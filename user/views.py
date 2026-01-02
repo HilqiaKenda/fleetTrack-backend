@@ -50,6 +50,7 @@ from .serializers import (
     BranchSerializer,
     BranchStatisticsSerializer,
     CreateBranchManagerSerializer,
+    DriverDashboardSerializer,
     EmptySerializer,
     LoginSerializer,
     RegisterSerializer,
@@ -197,7 +198,15 @@ class MeViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
     """
 
     permission_classes = [IsAuthenticated]
+    serializer_class = UserProfileSerializer  # ✅ REQUIRED for swagger
     # authentication_classes = [CookieJWTAuthentication]
+
+
+    def get_queryset(self):
+        # ✅ Swagger safety
+        if getattr(self, "swagger_fake_view", False):
+            return User.objects.none()
+        return User.objects.filter(id=self.request.user.id)
 
     def get_object(self):
         """Return the current authenticated user"""
@@ -636,6 +645,7 @@ class DriverDashboardViewSet(GenericViewSet):
         RolePermission.for_roles([ROLE_ADMIN, ROLE_DRIVER]),
     ]
     pagination_class = None
+    serializer_class = DriverDashboardSerializer
 
     @action(detail=False, methods=["get"], url_path="summary")
     def driver_summary(self, request):
@@ -803,11 +813,16 @@ class BranchViewSet(
     """
     Branch management
     """
-
+    permission_classes= [
+        RolePermission.for_roles(
+            [ROLE_ADMIN, ROLE_ORGANIZATION, ROLE_BRANCH_MANAGER]
+        )
+    ]
+    
     queryset = (
         Branch.objects.all()
-        .prefetch_related("branch_managers")
-        .select_related("branch_managers")
+        .prefetch_related("organization")
+        .select_related("organization")
     )
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["name", "code", "city", "region", "status"]
@@ -864,6 +879,12 @@ class BranchManagerViewSet(
     Branch Manager management.
     """
 
+    permission_classes= [
+        RolePermission.for_roles(
+            [ROLE_ADMIN, ROLE_ORGANIZATION, ROLE_BRANCH_MANAGER]
+        )
+    ]
+
     queryset = BranchManager.objects.prefetch_related("branch", "user").select_related(
         "branch", "user"
     )
@@ -902,6 +923,12 @@ class BranchAssignmentViewSet(
     """
     Branch Assignments (staff/driver assignments).
     """
+
+    permission_classes= [
+        RolePermission.for_roles(
+            [ROLE_ADMIN, ROLE_ORGANIZATION, ROLE_BRANCH_MANAGER]
+        )
+    ]
 
     queryset = BranchAssignment.objects.prefetch_related(
         "branch", "user"

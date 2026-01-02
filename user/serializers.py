@@ -158,8 +158,6 @@ class BranchSerializer(serializers.ModelSerializer):
             "country",
             "phone_number",
             "email",
-            "latitude",
-            "longitude",
             "status",
             "capacity",
             "vehicle_count",
@@ -217,8 +215,6 @@ class BranchDetailSerializer(serializers.ModelSerializer):
             "country",
             "phone_number",
             "email",
-            "latitude",
-            "longitude",
             "status",
             "capacity",
             "managers",
@@ -474,6 +470,14 @@ class DriverSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+
+
+class DriverDashboardSerializer(serializers.Serializer):
+    active_trips = serializers.IntegerField()
+    driving_hours_today = serializers.FloatField()
+    on_duty_hours_today = serializers.FloatField()
+
 
 
 class CarrierSerializer(serializers.ModelSerializer):

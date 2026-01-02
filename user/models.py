@@ -311,22 +311,6 @@ class Branch(models.Model):
     phone_number = models.CharField(validators=[phone_regex], max_length=17)
     email = models.EmailField()
 
-    # Coordinates for mapping
-    latitude = models.DecimalField(
-        max_digits=9,
-        decimal_places=6,
-        null=True,
-        blank=True,
-        help_text="Latitude coordinate",
-    )
-    longitude = models.DecimalField(
-        max_digits=9,
-        decimal_places=6,
-        null=True,
-        blank=True,
-        help_text="Longitude coordinate",
-    )
-
     # Operational details
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="active")
     capacity = models.PositiveIntegerField(
