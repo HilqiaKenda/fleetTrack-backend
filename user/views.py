@@ -41,7 +41,7 @@ from user.utilities.permissions import (
     ScopedQuerysetMixin,
 )
 
-from .models import Branch, BranchAssignment, BranchManager, Carrier, Driver, User
+from .models import Branch, BranchAssignment, BranchManager, Carrier, Driver, Organization, User
 from .serializers import (
     BranchAssignmentSerializer,
     BranchDetailSerializer,
@@ -50,8 +50,10 @@ from .serializers import (
     BranchSerializer,
     BranchStatisticsSerializer,
     CreateBranchManagerSerializer,
-    EmptySerializer,
+    OrganizationRegisterSerializer,
+    OrganizationSerializer,
     LoginSerializer,
+    RefreshSerializer,
     RegisterSerializer,
     UpdateUserProfileSerializer,
     UserProfileSerializer,
@@ -151,13 +153,12 @@ class RefreshTokenViewSet(GenericViewSet):
     """
 
     permission_classes = [AllowAny]
-    serializer_class = UserSerializer
+    serializer_class = RefreshSerializer
 
     def create(self, request, *args, **kwargs):
         refresh_token = request.data.get("refresh_token")
 
-        if not refresh_token:
-            return Response(
+        if not refresh_token:            return Response(
                 {"detail": "Refresh token is required."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -174,7 +175,6 @@ class RefreshTokenViewSet(GenericViewSet):
                 )
 
             new_access = str(token.access_token)
-
             return Response(
                 {
                     "access_token": new_access,
@@ -236,7 +236,7 @@ class MeViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
         return self.update(request, *args, **kwargs)
 
 
-class CheckAuthViewSet(GenericViewSet):
+class SessionAuthViewSet(GenericViewSet):
     """
     Check Authentication Status ViewSet
     """
@@ -332,7 +332,7 @@ class AdminDashboardViewSet(GenericViewSet):
     pagination_class = None
 
     def get_serializer_class(self):
-        return EmptySerializer
+        return OrganizationSerializer
 
     @action(detail=False, methods=["get", "post", "put"])
     def summary(self, request):
@@ -628,6 +628,112 @@ class AdminDashboardViewSet(GenericViewSet):
         else:
             ip = request.META.get("REMOTE_ADDR")
         return ip
+
+
+
+class OrganizationRegisterViewSet(GenericViewSet):
+    """
+    Register organization + login credentials
+    """
+
+    serializer_class = OrganizationRegisterSerializer
+    permission_classes = [AllowAny]
+
+    def create(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        organization = serializer.save()
+        user = organization.owner
+
+        refresh = RefreshToken.for_user(user)
+
+        return Response(
+            {
+                "organization": OrganizationSerializer(organization).data,
+                "user": UserSerializer(user).data,
+                "access_token": str(refresh.access_token),
+                "refresh_token": str(refresh),
+                "message": "Organization registered successfully",
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class OrganizationViewSet(
+    ListModelMixin,
+    RetrieveModelMixin,
+    UpdateModelMixin,
+    DestroyModelMixin,
+    GenericViewSet,
+):
+    """
+    Organization Management ViewSet
+    """
+
+    permission_classes = [
+        IsAuthenticated,
+        IsAdminUser,
+        RolePermission.for_roles([ROLE_ORGANIZATION]),
+    ]
+
+    queryset = Organization.objects.all().prefetch_related(
+        "branches",
+        "users",
+    )
+
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["name", "code", "status", "industry"]
+    ordering_fields = ["name", "status", "created_at"]
+
+    serializer_class = OrganizationSerializer
+
+    @action(detail=True, methods=["get"])
+    def statistics(self, request, pk=None):
+        """Return aggregated statistics for an organization"""
+
+        organization = self.get_object()
+
+        # Branch data
+        total_branches = organization.get_branch_count()
+        active_branches = organization.get_active_branches().count()
+
+        # User data
+        total_users = organization.get_user_count()
+
+        # Vehicles (safe defaults if model not implemented yet)
+        total_vehicles = getattr(organization, "vehicles", []).count() if hasattr(organization, "vehicles") else 0
+        active_vehicles = getattr(
+            organization.vehicles.filter(status="active"),
+            "count",
+            lambda: 0,
+        )() if hasattr(organization, "vehicles") else 0
+
+        inactive_vehicles = total_vehicles - active_vehicles
+
+        # Trips (safe placeholders)
+        active_trips = 0
+        completed_trips = 0
+
+        # Maintenance
+        maintenance_pending = 0
+
+        data = {
+            "organization_id": organization.id,
+            "organization_name": organization.name,
+            "total_branches": total_branches,
+            "active_branches": active_branches,
+            "total_users": total_users,
+            "total_vehicles": total_vehicles,
+            "active_vehicles": active_vehicles,
+            "inactive_vehicles": inactive_vehicles,
+            "active_trips": active_trips,
+            "completed_trips": completed_trips,
+            "maintenance_pending": maintenance_pending,
+        }
+
+        serializer = OrganizationStatisticsSerializer(data)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class DriverDashboardViewSet(GenericViewSet):
@@ -965,3 +1071,4 @@ class BranchStatisticsViewSet(GenericViewSet, ListModelMixin):
 
         serializer = self.get_serializer(data, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+    

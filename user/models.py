@@ -6,7 +6,6 @@ from django.contrib.auth.models import (
     BaseUserManager,
     PermissionsMixin,
 )
-
 from django.utils.translation import gettext_lazy as _
 
 
@@ -71,6 +70,8 @@ class User(AbstractBaseUser, PermissionsMixin):
         default="driver",
         help_text=_("The role of the user in the system."),
     )
+    branch = models.ForeignKey("Branch", on_delete=models.DO_NOTHING, related_name="user",
+                               help_text=_("The Branch this user belongs to."),)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
 
@@ -173,6 +174,15 @@ class Organization(models.Model):
         ("suspended", "Suspended"),
         ("inactive", "Inactive"),
     ]
+    owner = models.OneToOneField(
+        "User",
+        on_delete=models.CASCADE,
+        related_name="organization",
+        null=True,
+        blank=True,
+        limit_choices_to={"role": "organization"},
+        help_text="Primary login account for this organization",
+    )
 
     name = models.CharField(
         max_length=255, unique=True, help_text=_("Organization name")
@@ -295,21 +305,7 @@ class Branch(models.Model):
     phone_number = models.CharField(validators=[phone_regex], max_length=17)
     email = models.EmailField()
 
-    # Coordinates for mapping
-    latitude = models.DecimalField(
-        max_digits=9,
-        decimal_places=6,
-        null=True,
-        blank=True,
-        help_text="Latitude coordinate",
-    )
-    longitude = models.DecimalField(
-        max_digits=9,
-        decimal_places=6,
-        null=True,
-        blank=True,
-        help_text="Longitude coordinate",
-    )
+
 
     # Operational details
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="active")

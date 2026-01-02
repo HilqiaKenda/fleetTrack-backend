@@ -2,7 +2,7 @@ from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from .models import User, Carrier, Driver, Branch, BranchManager, BranchAssignment, User
+from .models import Organization, User, Carrier, Driver, Branch, BranchManager, BranchAssignment, User
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -10,8 +10,12 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id", "username", "email", "role", "is_active", "created_at"]
+        fields = ["id", "username", "email", "role", "branch", "is_active", "created_at"]
         read_only_fields = ["id", "created_at"]
+
+
+class RefreshSerializer(serializers.Serializer):
+    refresh_token = serializers.CharField()
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -26,7 +30,7 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id", "username", "email", "role", "password", "password2"]
+        fields = ["id", "username", "email", "role", "branch", "password", "password2"]
         extra_kwargs = {
             "email": {"required": True},
             "username": {"required": True},
@@ -46,7 +50,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         user = User.objects.create_user(
             username=validated_data["username"],
             email=validated_data["email"],
-            role=validated_data.get("role", "Maintenancer"),
+            role=validated_data.get("role", "Maintenance"),
             password=password,
         )
         return user
@@ -93,8 +97,124 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         return token
 
 
-class EmptySerializer(serializers.Serializer):
-    pass
+
+class OrganizationSerializer(serializers.ModelSerializer):
+    """Organization Management Serializer"""
+
+    branch_count = serializers.SerializerMethodField()
+    user_count = serializers.SerializerMethodField()
+    active_branch_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Organization
+        fields = [
+            "id",
+            "name",
+            "code",
+            "registration_number",
+            "email",
+            "phone_number",
+            "address",
+            "website",
+            "logo",
+            "status",
+            "industry",
+            "description",
+            "branch_count",
+            "active_branch_count",
+            "user_count",
+            "created_at",
+        ]
+
+    def get_branch_count(self, obj):
+        return obj.get_branch_count()
+
+    def get_active_branch_count(self, obj):
+        return obj.get_active_branches().count()
+
+    def get_user_count(self, obj):
+        return obj.get_user_count()
+
+
+
+class OrganizationRegisterSerializer(serializers.ModelSerializer):
+    """
+    Register organization WITH login credentials
+    """
+
+    # Auth fields
+    username = serializers.CharField(write_only=True)
+    password = serializers.CharField(
+        write_only=True, required=True, validators=[validate_password]
+    )
+    password2 = serializers.CharField(
+        write_only=True, required=True, label="Confirm Password"
+    )
+    email = serializers.EmailField(write_only=True, required=True, label="Organization Email")
+
+    class Meta:
+        model = Organization
+        fields = [
+            "name",
+            "code",
+            "registration_number",
+            "phone_number",
+            "email",
+            "address",
+            "website",
+            "industry",
+            "description",
+            "username",
+            "password",
+            "password2",
+        ]
+
+    def create(self, validated_data):
+        username = validated_data.pop("username")
+        password = validated_data.pop("password")
+        email = validated_data.pop("email")
+
+        # Create organization user
+        user = User.objects.create_user(
+            username=username,
+            email=email,
+            password=password,
+            role="organization",
+            is_staff=False,
+            is_active=True,
+        )
+
+        # Create organization
+        organization = Organization.objects.create(
+            owner=user,
+            email=email,
+            **validated_data,
+        )
+
+        return organization
+
+
+
+class OrganizationStatisticsSerializer(serializers.Serializer):
+    """Aggregated statistics for an organization"""
+
+    organization_id = serializers.IntegerField()
+    organization_name = serializers.CharField()
+
+    total_branches = serializers.IntegerField()
+    active_branches = serializers.IntegerField()
+
+    total_users = serializers.IntegerField()
+
+    total_vehicles = serializers.IntegerField()
+    active_vehicles = serializers.IntegerField()
+    inactive_vehicles = serializers.IntegerField()
+
+    active_trips = serializers.IntegerField()
+    completed_trips = serializers.IntegerField()
+
+    maintenance_pending = serializers.IntegerField()
+
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
@@ -158,8 +278,6 @@ class BranchSerializer(serializers.ModelSerializer):
             "country",
             "phone_number",
             "email",
-            "latitude",
-            "longitude",
             "status",
             "capacity",
             "vehicle_count",
@@ -217,8 +335,6 @@ class BranchDetailSerializer(serializers.ModelSerializer):
             "country",
             "phone_number",
             "email",
-            "latitude",
-            "longitude",
             "status",
             "capacity",
             "managers",
