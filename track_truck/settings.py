@@ -280,7 +280,7 @@ SIMPLE_JWT = {
 """
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = config("DEBUG_STATUS", default=True, cast=bool)
+DEBUG = config("DEBUG_STATUS", default=False, cast=bool)
 
 
 # Redirect all HTTP requests to HTTPS

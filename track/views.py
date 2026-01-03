@@ -29,6 +29,7 @@ from user.utilities.permissions import (
     ROLE_DRIVER,
     ROLE_FLEET_MANAGER,
     ROLE_MAINTENANCE,
+    ROLE_ORGANIZATION,
     RolePermission,
 )
 from django.db import transaction
@@ -68,6 +69,7 @@ class LocationViewSet(
         RolePermission.for_roles(
             [
                 ROLE_ADMIN,
+                ROLE_ORGANIZATION,
                 ROLE_FLEET_MANAGER,
                 ROLE_BRANCH_MANAGER,
             ]
@@ -109,6 +111,7 @@ class VehicleViewSet(
                 RolePermission.for_roles(
                     [
                         ROLE_ADMIN,
+                        ROLE_ORGANIZATION,
                         ROLE_FLEET_MANAGER,
                         ROLE_MAINTENANCE,
                         ROLE_BRANCH_MANAGER,
@@ -121,6 +124,7 @@ class VehicleViewSet(
             RolePermission.for_roles(
                 [
                     ROLE_ADMIN,
+                    ROLE_ORGANIZATION,
                     ROLE_FLEET_MANAGER,
                     ROLE_MAINTENANCE,
                     ROLE_BRANCH_MANAGER,
@@ -128,11 +132,7 @@ class VehicleViewSet(
             )()
         ]
     
-    # permission_classes = [
-    #     RolePermission.for_roles(
-    #         [ROLE_ADMIN, ROLE_FLEET_MANAGER, ROLE_MAINTENANCE, ROLE_BRANCH_MANAGER]
-    #     )
-    # ]
+
     serializer_class = VehicleSerializer
 
     def get_queryset(self):
@@ -143,7 +143,7 @@ class VehicleViewSet(
             return qs.none()
 
         user = self.request.user
-        if user.role == ROLE_ADMIN:
+        if user.role == ROLE_ADMIN or user.role == ROLE_ORGANIZATION:
             return qs
         return qs.filter(branch=user.branch)
 
@@ -186,38 +186,15 @@ class VehicleViewSet(
         )
     
 
-# class VehicleViewSet(
-#     CreateModelMixin,
-#     ListModelMixin,
-#     RetrieveModelMixin,
-#     UpdateModelMixin,
-#     GenericViewSet,
-# ):
-#     permission_classes = [
-#         IsAuthenticated,
-#         RolePermission.for_roles(
-#             [
-#                 ROLE_ADMIN,
-#                 ROLE_FLEET_MANAGER,
-#                 ROLE_MAINTENANCE,
-#                 ROLE_BRANCH_MANAGER,
-#             ]
-#         ),
-#     ]
-#     queryset = Vehicle.objects.select_related("branch")
-#     serializer_class = VehicleSerializer
-
-#     @action(detail=True, methods=["get"])
-#     def trips(self, request, pk=None):
-#         """Get trips for a specific vehicle"""
-#         vehicle = self.get_object()
-#         trips = Trip.objects.filter(vehicle=vehicle).order_by("-date")
-#         serializer = TripSerializer(trips, many=True)
-#         return Response(serializer.data)
-
-
 class FleetDashboardViewSet(GenericViewSet):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, RolePermission.for_roles(
+            [
+                ROLE_ADMIN,
+                ROLE_ORGANIZATION,
+                ROLE_FLEET_MANAGER,
+                ROLE_BRANCH_MANAGER,
+            ]
+        ),]
     serializer_class = FleetDashboardSerializer
 
     def list(self, request):
@@ -245,6 +222,7 @@ class TripViewSet(
         RolePermission.for_roles(
             [
                 ROLE_ADMIN,
+                ROLE_ORGANIZATION,
                 ROLE_FLEET_MANAGER,
                 ROLE_BRANCH_MANAGER,
             ]
@@ -254,7 +232,7 @@ class TripViewSet(
     event_qs = TripEvent.objects.select_related("location").order_by("timestamp")
 
     queryset = Trip.objects.select_related(
-        "driver", "co_driver", "vehicle", "vehicle__carrier"
+        "driver", "co_driver", "vehicle"
     ).prefetch_related(Prefetch("events", queryset=event_qs))
 
     def get_serializer_class(self):
@@ -394,6 +372,7 @@ class TripEventViewSet(
         RolePermission.for_roles(
             [
                 ROLE_ADMIN,
+                ROLE_ORGANIZATION,
                 ROLE_FLEET_MANAGER,
                 ROLE_DRIVER,
                 ROLE_BRANCH_MANAGER,
@@ -435,8 +414,7 @@ class TripEventViewSet(
 
 
 class SearchViewSet(GenericViewSet):
-    # permission_classes = [IsAuthenticated]
-    # permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated]
 
     serializer_class = SearchResponseSerializer
     

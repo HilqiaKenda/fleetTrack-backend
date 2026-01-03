@@ -1,5 +1,6 @@
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
+from django.db import transaction
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .models import Organization, User, Carrier, Driver, Branch, BranchManager, BranchAssignment, User
@@ -10,7 +11,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id", "username", "email", "role", "branch", "is_active", "created_at"]
+        fields = ["id","first_name", "last_name", "username", "email", "role","is_active", "created_at"]
         read_only_fields = ["id", "created_at"]
 
 
@@ -30,7 +31,7 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id", "username", "email", "role", "branch", "password", "password2"]
+        fields = ["id", "first_name", "last_name", "username", "email", "role", "password", "password2"]
         extra_kwargs = {
             "email": {"required": True},
             "username": {"required": True},
@@ -102,7 +103,7 @@ class OrganizationSerializer(serializers.ModelSerializer):
     """Organization Management Serializer"""
 
     branch_count = serializers.SerializerMethodField()
-    user_count = serializers.SerializerMethodField()
+    # user_count = serializers.SerializerMethodField()
     active_branch_count = serializers.SerializerMethodField()
 
     class Meta:
@@ -122,7 +123,7 @@ class OrganizationSerializer(serializers.ModelSerializer):
             "description",
             "branch_count",
             "active_branch_count",
-            "user_count",
+            # "user_count",
             "created_at",
         ]
 
@@ -132,25 +133,24 @@ class OrganizationSerializer(serializers.ModelSerializer):
     def get_active_branch_count(self, obj):
         return obj.get_active_branches().count()
 
-    def get_user_count(self, obj):
-        return obj.get_user_count()
+    # def get_user_count(self, obj):
+    #     return obj.get_user_count()
 
 
 
 class OrganizationRegisterSerializer(serializers.ModelSerializer):
     """
-    Register organization WITH login credentials
+    Register organization WITH login credentials (ATOMIC)
     """
 
-    # Auth fields
     username = serializers.CharField(write_only=True)
     password = serializers.CharField(
-        write_only=True, required=True, validators=[validate_password]
+        write_only=True,
+        required=True,
+        validators=[validate_password],
     )
-    password2 = serializers.CharField(
-        write_only=True, required=True, label="Confirm Password"
-    )
-    email = serializers.EmailField(write_only=True, required=True, label="Organization Email")
+    password2 = serializers.CharField(write_only=True, required=True)
+    email = serializers.EmailField(write_only=True, required=True)
 
     class Meta:
         model = Organization
@@ -169,12 +169,27 @@ class OrganizationRegisterSerializer(serializers.ModelSerializer):
             "password2",
         ]
 
+    def validate(self, attrs):
+        if attrs["password"] != attrs["password2"]:
+            raise serializers.ValidationError(
+                {"password2": "Passwords do not match"}
+            )
+        return attrs
+
+    @transaction.atomic
     def create(self, validated_data):
-        username = validated_data.pop("username")
+        """
+        Atomic creation:
+        - If user fails → rollback
+        - If organization fails → rollback
+        """
+
         password = validated_data.pop("password")
+        validated_data.pop("password2")
+        username = validated_data.pop("username")
         email = validated_data.pop("email")
 
-        # Create organization user
+        # 1️ Create organization owner user
         user = User.objects.create_user(
             username=username,
             email=email,
@@ -182,9 +197,10 @@ class OrganizationRegisterSerializer(serializers.ModelSerializer):
             role="organization",
             is_staff=False,
             is_active=True,
+            branch=None,  # explicitly global user
         )
 
-        # Create organization
+        # 2️ Create organization
         organization = Organization.objects.create(
             owner=user,
             email=email,
@@ -192,7 +208,6 @@ class OrganizationRegisterSerializer(serializers.ModelSerializer):
         )
 
         return organization
-
 
 
 class OrganizationStatisticsSerializer(serializers.Serializer):
@@ -568,6 +583,107 @@ class BranchStatisticsSerializer(serializers.Serializer):
     completed_trips = serializers.IntegerField()
     maintenance_pending = serializers.IntegerField()
     capacity_usage = serializers.CharField()
+
+
+
+from django.db import transaction
+from rest_framework import serializers
+from django.contrib.auth.password_validation import validate_password
+
+
+class DriverRegisterSerializer(serializers.ModelSerializer):
+    """
+    Register driver WITH login credentials (ATOMIC)
+    """
+
+    # User fields
+    username = serializers.CharField(write_only=True)
+    password = serializers.CharField(
+        write_only=True,
+        validators=[validate_password],
+    )
+    password2 = serializers.CharField(write_only=True)
+    email = serializers.EmailField(write_only=True)
+    first_name = serializers.CharField(write_only=True)
+    last_name = serializers.CharField(write_only=True)
+
+    class Meta:
+        model = Driver
+        fields = [
+            # Driver fields (from request)
+            "license_number",
+            "phone_number",
+            "organization",
+            "branch",
+
+            # User fields
+            "username",
+            "password",
+            "password2",
+            "email",
+            "first_name",
+            "last_name",
+        ]
+
+    def validate(self, attrs):
+        if attrs["password"] != attrs["password2"]:
+            raise serializers.ValidationError(
+                {"password2": "Passwords do not match"}
+            )
+        return attrs
+
+    @transaction.atomic
+    def create(self, validated_data):
+        """
+        Atomic creation:
+        - If user fails → rollback
+        - If driver fails → rollback
+        """
+
+        # 🔹 Extract user fields
+        username = validated_data.pop("username")
+        password = validated_data.pop("password")
+        validated_data.pop("password2")
+        email = validated_data.pop("email")
+        first_name = validated_data.pop("first_name")
+        last_name = validated_data.pop("last_name")
+
+        # 🔹 Generate full name
+        full_name = f"{first_name} {last_name}"
+
+        # 🔹 Generate driver_initial (first 3 + first 3)
+        base_initial = f"{first_name[:3]}{last_name[:3]}".upper()
+
+        driver_initial = base_initial
+        counter = 1
+
+        # 🔒 Ensure uniqueness
+        while Driver.objects.filter(driver_initial=driver_initial).exists():
+            driver_initial = f"{base_initial}{counter}"
+            counter += 1
+
+        # 1️⃣ Create user
+        user = User.objects.create_user(
+            username=username,
+            email=email,
+            password=password,
+            first_name=first_name,
+            last_name=last_name,
+            role="driver",
+            is_staff=False,
+            is_active=True,
+        )
+
+        # 2️⃣ Create driver
+        driver = Driver.objects.create(
+            user=user,
+            driver_initial=driver_initial,
+            full_name=full_name,
+            email=email,
+            **validated_data,
+        )
+
+        return driver
 
 
 class DriverSerializer(serializers.ModelSerializer):

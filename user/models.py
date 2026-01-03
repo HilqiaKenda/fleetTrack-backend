@@ -9,28 +9,16 @@ from django.contrib.auth.models import (
 from django.contrib.gis.db import models as gps_model
 from django.utils.translation import gettext_lazy
 
-# from django.utils.translation import gettext_lazy as _
-
 
 class UserManager(BaseUserManager):
     """Custom manager for the User model."""
 
     def create_user(self, email, username, role, password=None, **extra_fields):
-        """Create and return a regular user."""
-        if not email:
-            raise ValueError("The Email field is required.")
-        if not username:
-            raise ValueError("The Username field is required.")
-        if not role:
-            raise ValueError("The Role field is required.")
+        if not email: raise ValueError("The Email field is required.")
+        if not username: raise ValueError("The Username field is required.")
+        if not role: raise ValueError("The Role field is required.")
 
         email = self.normalize_email(email)
-
-        valid_roles = [r[0] for r in User.ROLE_CHOICES]
-        if role not in valid_roles:
-            raise ValueError(
-                f"Invalid role '{role}'. Valid roles are: {', '.join(valid_roles)}"
-            )
 
         user = self.model(email=email, username=username, role=role, **extra_fields)
         user.set_password(password)
@@ -38,18 +26,17 @@ class UserManager(BaseUserManager):
         return user
 
     def create_superuser(self, email, username, password=None, **extra_fields):
-        """Create and return a superuser."""
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
-        role = "admin"
+        extra_fields.setdefault("role", "admin") 
 
         if extra_fields.get("is_staff") is not True:
             raise ValueError("Superuser must have is_staff=True.")
         if extra_fields.get("is_superuser") is not True:
             raise ValueError("Superuser must have is_superuser=True.")
 
-        return self.create_user(email, username, role, password, **extra_fields)
-
+        return self.create_user(email, username, password=password, **extra_fields)
+    
 
 class User(AbstractBaseUser, PermissionsMixin):
     """Custom user model supporting email and role-based accounts."""
@@ -62,19 +49,23 @@ class User(AbstractBaseUser, PermissionsMixin):
         ("maintenancer", "Maintenancer"),
         ("driver", "Driver"),
     ]
-    first_name = models.CharField(max_length=50, null=False, blank=False)
-    last_name = models.CharField(max_length=50, null=False, blank=False)
+    first_name = models.CharField(max_length=50, null=False, blank=True)
+    last_name = models.CharField(max_length=50, null=False, blank=True)
     username = models.CharField(max_length=255, unique=True)
+    # organization = models.ForeignKey(
+    #     "Organization",
+    #     on_delete=models.CASCADE,
+    #     related_name="users",
+    #     null=True,
+    #     blank=True,
+    # )
     email = models.EmailField(unique=True)
     telephone = models.CharField(max_length=20, blank=True, null=True)
     role = models.CharField(
         max_length=50,
         choices=ROLE_CHOICES,
         default="driver",
-        help_text=gettext_lazy("The role of the user in the system."),
-    )
-    branch = models.ForeignKey("Branch", on_delete=models.DO_NOTHING, related_name="user",
-                               help_text=gettext_lazy("The Branch this user belongs to."),)
+        help_text=gettext_lazy("The role of the user in the system."))
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
 
@@ -88,13 +79,33 @@ class User(AbstractBaseUser, PermissionsMixin):
     REQUIRED_FIELDS = ["email"]
 
     class Meta:
-        db_table = "users"
         verbose_name = gettext_lazy("user")
         verbose_name_plural = gettext_lazy("users")
         indexes = [
             models.Index(fields=["email"]),
             models.Index(fields=["username"]),
         ]
+
+
+    def create_user(self, email, username, role=None, password=None, **extra_fields):
+        if not email: raise ValueError("The Email field is required.")
+        if not username: raise ValueError("The Username field is required.")
+        
+
+        if role is None:
+            role = extra_fields.get("role", "driver")
+
+        email = self.normalize_email(email)
+
+        user = self.model(email=email, username=username, role=role, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.username} ({self.role})"
@@ -155,7 +166,6 @@ class UserActivityLog(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        db_table = "user_activity_logs"
         ordering = ["-timestamp"]
         indexes = [
             models.Index(fields=["user", "timestamp"]),
@@ -233,7 +243,6 @@ class Organization(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        db_table = "organizations"
         ordering = ["name"]
         verbose_name = gettext_lazy("Organization")
         verbose_name_plural = gettext_lazy("Organizations")
@@ -275,7 +284,6 @@ class Carrier(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        db_table = "carriers"
         ordering = ["name"]
 
     def __str__(self):
@@ -333,7 +341,6 @@ class Branch(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        db_table = "branches"
         ordering = ["name"]
         verbose_name_plural = "Branches"
         indexes = [
@@ -376,6 +383,9 @@ class BranchManager(models.Model):
             "role__in": ["fleet-manager", "Maintenancer", "branch-manager"]
         },
     )
+    organization = models.ForeignKey(
+        Organization, on_delete=models.CASCADE, related_name="branch_managers"
+    )
     branch = models.ForeignKey(
         Branch, on_delete=models.CASCADE, related_name="branch_managers"
     )
@@ -411,7 +421,6 @@ class BranchManager(models.Model):
     )
 
     class Meta:
-        db_table = "branch_managers"
         ordering = ["-is_primary", "branch__name"]
         unique_together = ["user", "branch"]
         verbose_name = "Branch Manager"
@@ -448,7 +457,6 @@ class BranchManager(models.Model):
 
     def get_assigned_drivers(self):
         """Get all drivers assigned to this branch"""
-        from .models import Driver
 
         return Driver.objects.filter(
             user__managed_branches__branch=self.branch, user__role="driver"
@@ -490,7 +498,6 @@ class BranchAssignment(models.Model):
     notes = models.TextField(blank=True)
 
     class Meta:
-        db_table = "branch_assignments"
         ordering = ["-start_date"]
         indexes = [
             models.Index(fields=["user", "branch", "is_active"]),
@@ -538,13 +545,13 @@ class Driver(models.Model):
     license_number = models.CharField(max_length=50, unique=True)
     phone_number = models.CharField(max_length=20, blank=True)
     email = models.EmailField(blank=True)
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="driver")
     branch = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name="drivers")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        db_table = "drivers"
         ordering = ["driver_initial"]
 
     def __str__(self):
@@ -561,7 +568,6 @@ class DashboardCache(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        db_table = "dashboard_cache"
         indexes = [
             models.Index(fields=["cache_key", "user_role"]),
             models.Index(fields=["expires_at"]),

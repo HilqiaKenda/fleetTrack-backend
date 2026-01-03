@@ -1,12 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
-from user.views import (
-    AdminDashboardViewSet,
-    CarrierViewSet,
-    DriverDashboardViewSet,
-    DriverViewSet,
-)
 from .views import (
     LocationViewSet,
     SearchViewSet,
@@ -17,10 +11,6 @@ from .views import (
 
 router = DefaultRouter()
 router.register(r"locations", LocationViewSet, basename="location")
-router.register(r"admin", AdminDashboardViewSet, basename="admin-dash")
-router.register(r"drivers", DriverDashboardViewSet, basename="driver-dash")
-router.register(r"drivers", DriverViewSet, basename="driver")
-router.register(r"carriers", CarrierViewSet, basename="carrier")
 router.register(r"vehicles", VehicleViewSet, basename="vehicle")
 router.register(r"trips", TripViewSet, basename="trips")
 router.register(r"trip-events", TripEventViewSet, basename="event")

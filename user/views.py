@@ -20,6 +20,9 @@ from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
+from rest_framework.exceptions import bad_request, server_error, NotAuthenticated
+from rest_framework.exceptions import ValidationError
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework_simplejwt.tokens import RefreshToken
 from track.models import AlertLog, Trip, UserActivityLog, Vehicle
 from track.serializers import TripSerializer
@@ -48,7 +51,7 @@ from .serializers import (
     BranchStatisticsSerializer,
     CreateBranchManagerSerializer,
     DriverDashboardSerializer,
-    EmptySerializer,
+    DriverRegisterSerializer,
     LoginSerializer,
     OrganizationRegisterSerializer,
     OrganizationSerializer,
@@ -71,12 +74,46 @@ class RegisterViewSet(GenericViewSet):
     permission_classes = [AllowAny]
 
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = serializer.save()
+        try:
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            user = serializer.save()
 
-        refresh = RefreshToken.for_user(user)
+            refresh = RefreshToken.for_user(user)
+        
+        # Catch validation errors raised by serializer
+        except ValidationError as exc:
+            return Response(
+                {
+                    "message": "Bad Request Error",
+                    "status": False,
+                    "details": str(exc)
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
+        # Catch validation errors from Django model
+        except DjangoValidationError as exc:  
+            return Response(
+                {
+                    "message": "Internal Validation Error",
+                    "status": False,
+                    "details": str(exc)
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Catch all other exceptions
+        except Exception as exc:  
+            return Response(
+                {
+                    "message": "Unexpected Error Occurred",
+                    "status": False,
+                    "details": str(exc)
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+                
         return Response(
             {
                 "user": UserSerializer(user).data,
@@ -97,12 +134,45 @@ class LoginViewSet(GenericViewSet):
     permission_classes = [AllowAny]
 
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        try:
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
 
-        user = serializer.validated_data["user"]
-        refresh = RefreshToken.for_user(user)
+            user = serializer.validated_data["user"]
+            refresh = RefreshToken.for_user(user)
 
+        # Catch validation errors raised by serializer
+        except ValidationError as exc:
+            return Response(
+                {
+                    "message": "Bad Request Error",
+                    "status": False,
+                    "details": str(exc)
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Catch validation errors from Django model
+        except DjangoValidationError as exc:  
+            return Response(
+                {
+                    "message": "Internal Validation Error",
+                    "status": False,
+                    "details": str(exc)
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Catch all other exceptions
+        except Exception as exc:  
+            return Response(
+                {
+                    "message": "Unexpected Error Occurred",
+                    "status": False,
+                    "details": str(exc)
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
         return Response(
             {
                 "user": UserSerializer(user).data,
@@ -139,6 +209,16 @@ class LogoutViewSet(GenericViewSet):
                 {"detail": "Invalid or expired refresh token."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        
+        except Exception as exc:
+            return Response(
+                {
+                    "message": "Unexpected Error",
+                    "status": False,
+                    "details": str(exc)
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
         return Response(
             {"message": "Successfully logged out."},
@@ -174,7 +254,28 @@ class RefreshTokenViewSet(GenericViewSet):
                 )
 
             new_access = str(token.access_token)
+
+        # except TokenError:
+        #     return Response(
+        #         {"detail": "Invalid or expired refresh token."},
+        #         status=status.HTTP_401_UNAUTHORIZED,
+        #     )
+        except TokenError as exc:
             return Response(
+                {"detail": "Invalid or expired refresh token."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        except Exception as exc:
+            return Response(
+                {
+                    "message": "Unexpected Error",
+                    "status": False,
+                    "details": str(exc)
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        return Response(
                 {
                     "access_token": new_access,
                     "refresh_token": str(token),
@@ -183,11 +284,6 @@ class RefreshTokenViewSet(GenericViewSet):
                 status=status.HTTP_200_OK,
             )
 
-        except TokenError:
-            return Response(
-                {"detail": "Invalid or expired refresh token."},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
 
 
 class MeViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
@@ -218,17 +314,49 @@ class MeViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
 
     def retrieve(self, request, *args, **kwargs):
         """Get current user profile"""
-        serializer = self.get_serializer(self.get_object())
+        try:
+            serializer = self.get_serializer(self.get_object())
+        except Exception as exc:
+            return Response(
+                {
+                    "message": "Error retrieving profile",
+                    "status": False,
+                    "details": str(exc)
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def update(self, request, *args, **kwargs):
         """Full update current user profile"""
-        partial = kwargs.pop("partial", False)
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
+        
+        try:
+            partial = kwargs.pop("partial", False)
+            instance = self.get_object()
+            serializer = self.get_serializer(instance, data=request.data, partial=partial)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
 
+        except ValidationError as exc:
+            return Response(
+                {
+                    "message": "Validation error",
+                    "status": False,
+                    "details": str(exc)
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        except Exception as exc:
+            return Response(
+                {
+                    "message": "Unexpected Error",
+                    "status": False,
+                    "details": str(exc)
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
         return Response(
             {
                 "user": UserProfileSerializer(instance).data,
@@ -254,13 +382,20 @@ class SessionAuthViewSet(GenericViewSet):
 
     def list(self, request, *args, **kwargs):
         """Check if user is authenticated (useful for frontend)"""
-        return Response(
-            {
-                "authenticated": True,
-                "user": UserSerializer(request.user).data,
-            },
-            status=status.HTTP_200_OK,
-        )
+
+        try:
+            return Response(
+                {
+                    "authenticated": True,
+                    "user": UserSerializer(request.user).data,
+                },
+                status=status.HTTP_200_OK,
+            )
+        except Exception as e:
+            return Response(
+                {"status": False, "message": "Error checking authentication status", "details": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 
 class UserManagementViewSet(
@@ -311,7 +446,30 @@ class UserManagementViewSet(
                 {"error": "Only administrators can create users."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        return super().create(request, *args, **kwargs)
+        
+        try:
+            return super().create(request, *args, **kwargs)
+        
+        except TokenError as exc:
+            return Response(
+                {"detail": "Invalid or expired refresh token."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        except Exception as e:
+            return Response(
+                {"error": "Error creating user", "details": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        except Exception as exc:
+            return Response(
+                {
+                    "message": "Unexpected Error",
+                    "status": False,
+                    "details": str(exc)
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     def destroy(self, request, *args, **kwargs):
         """Only admin can delete users"""
@@ -320,21 +478,33 @@ class UserManagementViewSet(
                 {"error": "Only administrators can delete users."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        return super().destroy(request, *args, **kwargs)
+        
+        try:
+            return super().destroy(request, *args, **kwargs)
+        except Exception as e:
+            return Response(
+                {"error": "Error deleting user", "details": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     def list(self, request, *args, **kwargs):
         """List all users with pagination"""
         queryset = self.filter_queryset(self.get_queryset())
         serializer = self.get_serializer(queryset, many=True)
 
-        return Response({"count": queryset.count(), "users": serializer.data})
+        try:
+            return Response({"count": queryset.count(), "users": serializer.data})
+    
+        except Exception as e:
+            return Response(
+                {"error": "Error listing users", "details": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
-
-class AdminDashboardViewSet(GenericViewSet):
+class OrganizationDashboardViewSet(GenericViewSet):
     permission_classes = [
         IsAuthenticated,
-        IsAdminUser,
-        RolePermission.for_roles([ROLE_ADMIN]),
+        RolePermission.for_roles([ROLE_ORGANIZATION, ROLE_ADMIN]),
     ]
     pagination_class = None
 
@@ -391,7 +561,7 @@ class AdminDashboardViewSet(GenericViewSet):
 
             if branch_ids:
                 branch_list = [int(b) for b in branch_ids.split(",")]
-                vehicle_filter &= Q(carrier__branch_id__in=branch_list)
+                vehicle_filter &= Q(branch__branch_id__in=branch_list)
                 trip_filter &= Q(vehicle__carrier__branch_id__in=branch_list)
 
             if not include_inactive:
@@ -546,12 +716,12 @@ class AdminDashboardViewSet(GenericViewSet):
     def _get_vehicle_distribution(self, vehicle_filter):
         """Return vehicle count grouped by carrier"""
         vehicles = (
-            Vehicle.objects.prefetch_related("carrier", "branch")
-            .select_related("carrier", "branch")
+            Vehicle.objects.prefetch_related( "branch")
+            .select_related("branch")
             .filter(vehicle_filter)
         )
         return list(
-            vehicles.values("carrier__name")
+            vehicles.values("branch__name")
             .annotate(vehicle_count=Count("id"))
             .order_by("-vehicle_count")
         )
@@ -643,17 +813,36 @@ class OrganizationRegisterViewSet(GenericViewSet):
     Register organization + login credentials
     """
 
+
     serializer_class = OrganizationRegisterSerializer
     permission_classes = [AllowAny]
 
     def create(self, request):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+            
+        try:
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
 
-        organization = serializer.save()
-        user = organization.owner
+            organization = serializer.save()
+            user = organization.owner
 
-        refresh = RefreshToken.for_user(user)
+            refresh = RefreshToken.for_user(user)
+
+        except TokenError as exc:
+            return Response(
+                {"detail": "Invalid or expired refresh token."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        except Exception as exc:
+            return Response(
+                {
+                    "message": "Unexpected Error",
+                    "status": False,
+                    "details": str(exc)
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
         return Response(
             {
@@ -681,12 +870,12 @@ class OrganizationViewSet(
     permission_classes = [
         IsAuthenticated,
         IsAdminUser,
-        RolePermission.for_roles([ROLE_ORGANIZATION]),
+        RolePermission.for_roles([ROLE_ORGANIZATION, ROLE_ADMIN]),
     ]
 
     queryset = Organization.objects.all().prefetch_related(
         "branches",
-        "users",
+        "owner",
     )
 
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
@@ -699,48 +888,105 @@ class OrganizationViewSet(
     def statistics(self, request, pk=None):
         """Return aggregated statistics for an organization"""
 
-        organization = self.get_object()
+        try:
+            organization = self.get_object()
 
-        # Branch data
-        total_branches = organization.get_branch_count()
-        active_branches = organization.get_active_branches().count()
+            # Branch data
+            total_branches = organization.get_branch_count()
+            active_branches = organization.get_active_branches().count()
 
-        # User data
-        total_users = organization.get_user_count()
+            # User data
+            total_users = organization.get_user_count()
 
-        # Vehicles (safe defaults if model not implemented yet)
-        total_vehicles = getattr(organization, "vehicles", []).count() if hasattr(organization, "vehicles") else 0
-        active_vehicles = getattr(
-            organization.vehicles.filter(status="active"),
-            "count",
-            lambda: 0,
-        )() if hasattr(organization, "vehicles") else 0
+            # Vehicles (safe defaults if model not implemented yet)
+            total_vehicles = getattr(organization, "vehicles", []).count() if hasattr(organization, "vehicles") else 0
+            active_vehicles = getattr(
+                organization.vehicles.filter(status="active"),
+                "count",
+                lambda: 0,
+            )() if hasattr(organization, "vehicles") else 0
 
-        inactive_vehicles = total_vehicles - active_vehicles
+            inactive_vehicles = total_vehicles - active_vehicles
 
-        # Trips (safe placeholders)
-        active_trips = 0
-        completed_trips = 0
+            # Trips (safe placeholders)
+            active_trips = 0
+            completed_trips = 0
 
-        # Maintenance
-        maintenance_pending = 0
+            # Maintenance
+            maintenance_pending = 0
 
-        data = {
-            "organization_id": organization.id,
-            "organization_name": organization.name,
-            "total_branches": total_branches,
-            "active_branches": active_branches,
-            "total_users": total_users,
-            "total_vehicles": total_vehicles,
-            "active_vehicles": active_vehicles,
-            "inactive_vehicles": inactive_vehicles,
-            "active_trips": active_trips,
-            "completed_trips": completed_trips,
-            "maintenance_pending": maintenance_pending,
-        }
+            data = {
+                "organization_id": organization.id,
+                "organization_name": organization.name,
+                "total_branches": total_branches,
+                "active_branches": active_branches,
+                "total_users": total_users,
+                "total_vehicles": total_vehicles,
+                "active_vehicles": active_vehicles,
+                "inactive_vehicles": inactive_vehicles,
+                "active_trips": active_trips,
+                "completed_trips": completed_trips,
+                "maintenance_pending": maintenance_pending,
+            }
 
-        serializer = OrganizationStatisticsSerializer(data)
+            serializer = OrganizationStatisticsSerializer(data)
+        except Exception as e:
+            return Response(
+                {"error": "Error generating organization statistics", "details": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+
+class DriverRegisterViewSet(GenericViewSet):
+    """
+    Create driver + login credentials
+    """
+
+    serializer_class = DriverRegisterSerializer
+    permission_classes = [
+        IsAuthenticated,
+        IsAdminUser,
+        RolePermission.for_roles([ROLE_ORGANIZATION, ROLE_ADMIN]),
+    ]
+
+    def create(self, request):
+        try:
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+
+            driver = serializer.save()
+            user = driver.user
+
+            refresh = RefreshToken.for_user(user)
+        
+        except TokenError as exc:
+            return Response(
+                {"detail": "Invalid or expired refresh token."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        except Exception as exc:
+            return Response(
+                {
+                    "message": "Unexpected Error",
+                    "status": False,
+                    "details": str(exc)
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        return Response(
+            {
+                "driver": DriverSerializer(driver).data,
+                "user": UserSerializer(user).data,
+                "access_token": str(refresh.access_token),
+                "refresh_token": str(refresh),
+                "message": "Driver registered successfully",
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class DriverDashboardViewSet(GenericViewSet):
@@ -772,56 +1018,63 @@ class DriverDashboardViewSet(GenericViewSet):
                 {"status": False, "message": "Driver not found"},
                 status=status.HTTP_404_NOT_FOUND,
             )
+        
+        try:
+            # Get all trips by this driver
+            all_trips = (
+                Trip.objects.prefetch_related("driver", "co_driver", "vehicle")
+                .select_related("driver", "co_driver", "vehicle")
+                .filter(driver_id=driver.id)
+            )
+            trips_count = (
+                Trip.objects.prefetch_related("driver", "co_driver", "vehicle")
+                .select_related("driver", "co_driver", "vehicle")
+                .filter(driver_id=driver.id)
+                .count()
+            )
 
-        # Get all trips by this driver
-        all_trips = (
-            Trip.objects.prefetch_related("driver", "co_driver", "vehicle")
-            .select_related("driver", "co_driver", "vehicle")
-            .filter(driver_id=driver.id)
-        )
-        trips_count = (
-            Trip.objects.prefetch_related("driver", "co_driver", "vehicle")
-            .select_related("driver", "co_driver", "vehicle")
-            .filter(driver_id=driver.id)
-            .count()
-        )
+            # Get all vehicles used
+            vehicle_ids = all_trips.values_list("vehicle_id", flat=True).distinct()
+            used_vehicles = (
+                Vehicle.objects.prefetch_related("branch")
+                .select_related("branch")
+                .filter(id__in=vehicle_ids)
+            )
+            all_vehicles = (
+                Vehicle.objects.prefetch_related("branch")
+                .select_related("branch")
+                .filter(id__in=vehicle_ids)
+                .count()
+            )
 
-        # Get all vehicles used
-        vehicle_ids = all_trips.values_list("vehicle_id", flat=True).distinct()
-        used_vehicles = (
-            Vehicle.objects.prefetch_related("carrier", "branch")
-            .select_related("carrier", "branch")
-            .filter(id__in=vehicle_ids)
-        )
-        all_vehicles = (
-            Vehicle.objects.prefetch_related("branch", "carrier")
-            .select_related("carrier", "branch")
-            .filter(id__in=vehicle_ids)
-            .count()
-        )
+            # Get current assigned trip
+            current_trip = all_trips.filter(
+                Q(status="ongoing") | Q(status="assigned")
+            ).first()
 
-        # Get current assigned trip
-        current_trip = all_trips.filter(
-            Q(status="ongoing") | Q(status="assigned")
-        ).first()
+            # Get current assigned vehicle
+            current_vehicle = current_trip.vehicle if current_trip else None
 
-        # Get current assigned vehicle
-        current_vehicle = current_trip.vehicle if current_trip else None
+            # Driver details (basic record)
+            driver_record = {
+                "id": driver.id,
+                "name": driver.user.username,
+                "email": driver.email,
+                "phone": driver.phone_number,
+            }
 
-        # Driver details (basic record)
-        driver_record = {
-            "id": driver.id,
-            "name": driver.user.username,
-            "email": driver.email,
-            "phone": driver.phone_number,
-        }
+            # Serialize trip and vehicle data as needed or use DRF serializers if available
+            trip_data = list(all_trips.values())
+            vehicle_data = list(used_vehicles.values())
+            current_trip_data = current_trip.id if current_trip else None
+            current_vehicle_data = current_vehicle.id if current_vehicle else None
 
-        # Serialize trip and vehicle data as needed or use DRF serializers if available
-        trip_data = list(all_trips.values())
-        vehicle_data = list(used_vehicles.values())
-        current_trip_data = current_trip.id if current_trip else None
-        current_vehicle_data = current_vehicle.id if current_vehicle else None
-
+        except Exception as e:
+            return Response(
+                {"status": False, "message": "Error fetching driver summary", "details": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        
         return Response(
             {
                 "status": True,
@@ -840,7 +1093,6 @@ class DriverDashboardViewSet(GenericViewSet):
 
 
 class DriverViewSet(
-    CreateModelMixin,
     ListModelMixin,
     RetrieveModelMixin,
     UpdateModelMixin,
@@ -865,31 +1117,47 @@ class DriverViewSet(
             .order_by("-date")
         )
         serializer = TripSerializer(trips, many=True)
+    
         return Response(serializer.data)
+    
 
     @action(detail=True, methods=["get"])
     def hours_summary(self, request, pk=None):
         """Get hours summary for a driver"""
-        driver = self.get_object()
-        date_from = request.query_params.get("date_from")
-        date_to = request.query_params.get("date_to")
 
-        trips = (
-            Trip.objects.prefetch_related("driver", "co_driver")
-            .select_related("driver", "co_driver")
-            .filter(driver=driver)
-        )
-        if date_from:
-            trips = trips.filter(date__gte=date_from)
-        if date_to:
-            trips = trips.filter(date__lte=date_to)
+        try:
+            driver = self.get_object()
+            date_from = request.query_params.get("date_from")
+            date_to = request.query_params.get("date_to")
 
-        summary = trips.aggregate(
-            total_driving_hours=Sum("total_driving_hours"),
-            total_on_duty_hours=Sum("total_on_duty_hours"),
-            total_miles=Sum("total_miles_driving"),
-            trip_count=Count("id"),
-        )
+            trips = (
+                Trip.objects.prefetch_related("driver", "co_driver")
+                .select_related("driver", "co_driver")
+                .filter(driver=driver)
+            )
+            if date_from:
+                trips = trips.filter(date__gte=date_from)
+            if date_to:
+                trips = trips.filter(date__lte=date_to)
+
+            summary = trips.aggregate(
+                total_driving_hours=Sum("total_driving_hours"),
+                total_on_duty_hours=Sum("total_on_duty_hours"),
+                total_miles=Sum("total_miles_driving"),
+                trip_count=Count("id"),
+            )
+
+        except Driver.DoesNotExist:
+            return Response(
+                {"status": False, "message": "Driver not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        except Exception as e:
+            return Response(
+                {"status": False, "message": "Error calculating hours summary", "details": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
         return Response(summary)
 
@@ -942,32 +1210,59 @@ class BranchViewSet(
     @action(detail=True, methods=["get"])
     def managers(self, request, pk=None):
         """Return all active managers for this branch."""
-        branch = self.get_object()
-        managers = branch.branch_managers.filter(is_active=True)
-        serializer = BranchManagerSerializer(managers, many=True)
+    
+        try:
+            branch = self.get_object()
+            managers = branch.branch_managers.filter(is_active=True)
+            serializer = BranchManagerSerializer(managers, many=True)
+        
+        except Branch.DoesNotExist:
+            return Response(
+                {"status": False, "message": "Branch not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except Exception as e:
+            return Response(
+                {"status": False, "message": "Error fetching managers", "details": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+    
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["get"])
     def statistics(self, request, pk=None):
         """Return detailed statistics for a single branch."""
-        branch = self.get_object()
-        data = {
-            "branch_id": branch.id,
-            "branch_name": branch.name,
-            "total_vehicles": branch.get_vehicle_count(),
-            "active_vehicles": branch.get_active_vehicle_count(),
-            "inactive_vehicles": branch.get_vehicle_count(),
-            "total_drivers": branch.get_driver_count(),
-            "active_trips": 0,
-            "completed_trips": 0,
-            "maintenance_pending": 0,
-            "capacity_usage": (
-                f"{(branch.get_vehicle_count() / branch.capacity * 100):.1f}%"
-                if branch.capacity > 0
-                else "N/A"
-            ),
-        }
-        serializer = BranchStatisticsSerializer(data)
+    
+        try:
+            branch = self.get_object()
+            data = {
+                "branch_id": branch.id,
+                "branch_name": branch.name,
+                "total_vehicles": branch.get_vehicle_count(),
+                "active_vehicles": branch.get_active_vehicle_count(),
+                "inactive_vehicles": branch.get_vehicle_count(),
+                "total_drivers": branch.get_driver_count(),
+                "active_trips": 0,
+                "completed_trips": 0,
+                "maintenance_pending": 0,
+                "capacity_usage": (
+                    f"{(branch.get_vehicle_count() / branch.capacity * 100):.1f}%"
+                    if branch.capacity > 0
+                    else "N/A"
+                ),
+            }
+            serializer = BranchStatisticsSerializer(data)
+
+        except Branch.DoesNotExist:
+            return Response(
+                {"status": False, "message": "Branch not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except Exception as e:
+            return Response(
+                {"status": False, "message": "Error fetching branch statistics", "details": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         return Response(serializer.data)
 
 
@@ -1004,15 +1299,42 @@ class BranchManagerViewSet(
     @action(detail=False, methods=["get"], url_path="by-branch/(?P<branch_id>[^/.]+)")
     def by_branch(self, request, branch_id=None):
         """List all active managers for a specific branch."""
-        managers = self.queryset.filter(branch_id=branch_id, is_active=True)
-        serializer = self.get_serializer(managers, many=True)
+    
+        try:
+            managers = self.queryset.filter(branch_id=branch_id, is_active=True)
+            serializer = self.get_serializer(managers, many=True)
+        
+        except BranchManager.DoesNotExist:
+            return Response(
+                {"status": False, "message": "Branch manager not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except Exception as e:
+            return Response(
+                {"status": False, "message": "Error fetching branch managers", "details": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+    
         return Response(serializer.data)
 
     @action(detail=False, methods=["get"], url_path="by-user/(?P<user_id>[^/.]+)")
     def by_user(self, request, user_id=None):
         """List all branches managed by a given user."""
-        managers = self.queryset.filter(user_id=user_id, is_active=True)
-        serializer = self.get_serializer(managers, many=True)
+        
+        try:
+            managers = self.queryset.filter(user_id=user_id, is_active=True)
+            serializer = self.get_serializer(managers, many=True)
+        except BranchAssignment.DoesNotExist:
+            return Response(
+                {"status": False, "message": "No assignments found for this user"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except Exception as e:
+            return Response(
+                {"status": False, "message": "Error fetching assignments by user", "details": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+    
         return Response(serializer.data)
 
 
@@ -1045,15 +1367,43 @@ class BranchAssignmentViewSet(
     @action(detail=False, methods=["get"], url_path="by-branch/(?P<branch_id>[^/.]+)")
     def by_branch(self, request, branch_id=None):
         """List all active assignments in a branch."""
-        assignments = self.queryset.filter(branch_id=branch_id, is_active=True)
-        serializer = self.get_serializer(assignments, many=True)
+    
+        try:
+            assignments = self.queryset.filter(branch_id=branch_id, is_active=True)
+            serializer = self.get_serializer(assignments, many=True)
+
+        except BranchAssignment.DoesNotExist:
+            return Response(
+                {"status": False, "message": "No assignments found for this branch"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except Exception as e:
+            return Response(
+                {"status": False, "message": "Error fetching assignments by branch", "details": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+    
         return Response(serializer.data)
 
     @action(detail=False, methods=["get"], url_path="by-user/(?P<user_id>[^/.]+)")
     def by_user(self, request, user_id=None):
         """List all branch assignments for a user."""
-        assignments = self.queryset.filter(user_id=user_id, is_active=True)
-        serializer = self.get_serializer(assignments, many=True)
+        
+        try:
+            assignments = self.queryset.filter(user_id=user_id, is_active=True)
+            serializer = self.get_serializer(assignments, many=True)
+
+        except BranchAssignment.DoesNotExist:
+            return Response(
+                {"status": False, "message": "No assignments found for this user"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except Exception as e:
+            return Response(
+                {"status": False, "message": "Error fetching assignments by user", "details": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+    
         return Response(serializer.data)
 
 
@@ -1066,34 +1416,42 @@ class BranchStatisticsViewSet(GenericViewSet, ListModelMixin):
 
     def list(self, request, *args, **kwargs):
         """Return aggregated statistics for all branches."""
-        branches = (
-            Branch.objects.select_related("organization")
-            .select_related("organization")
-            .all()
-        )
-        data = []
-
-        for branch in branches:
-            data.append(
-                {
-                    "branch_id": branch.id,
-                    "branch_name": branch.name,
-                    "total_vehicles": branch.get_vehicle_count(),
-                    "active_vehicles": branch.get_active_vehicle_count(),
-                    "inactive_vehicles": branch.get_vehicle_count()
-                    - branch.get_active_vehicle_count(),
-                    "total_drivers": branch.get_driver_count(),
-                    "active_trips": 0,
-                    "completed_trips": 0,
-                    "maintenance_pending": 0,
-                    "capacity_usage": (
-                        f"{(branch.get_vehicle_count() / branch.capacity * 100):.1f}%"
-                        if branch.capacity > 0
-                        else "N/A"
-                    ),
-                }
+            
+        try:
+            branches = (
+                Branch.objects.select_related("organization")
+                .select_related("organization")
+                .all()
             )
+            data = []
 
-        serializer = self.get_serializer(data, many=True)
+            for branch in branches:
+                data.append(
+                    {
+                        "branch_id": branch.id,
+                        "branch_name": branch.name,
+                        "total_vehicles": branch.get_vehicle_count(),
+                        "active_vehicles": branch.get_active_vehicle_count(),
+                        "inactive_vehicles": branch.get_vehicle_count()
+                        - branch.get_active_vehicle_count(),
+                        "total_drivers": branch.get_driver_count(),
+                        "active_trips": 0,
+                        "completed_trips": 0,
+                        "maintenance_pending": 0,
+                        "capacity_usage": (
+                            f"{(branch.get_vehicle_count() / branch.capacity * 100):.1f}%"
+                            if branch.capacity > 0
+                            else "N/A"
+                        ),
+                    }
+                )
+
+            serializer = self.get_serializer(data, many=True)
+
+        except Exception as e:
+            return Response(
+                {"status": False, "message": "Error fetching branch statistics", "details": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         return Response(serializer.data, status=status.HTTP_200_OK)
     
